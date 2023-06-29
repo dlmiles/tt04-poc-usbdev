@@ -33,7 +33,7 @@ module tt_um_dlmiles_tt04_poc_usbdev (
     reg phyCd_resetNext;
     reg [1:0] phyCd_counter;
     wire phyCd_counter_overflow;
-    assign phyCd_counter_overflow = phyCd_counter == 2'b11;
+    assign phyCd_counter_overflow = phyCd_counter == 2'b01;
 
     // Simulates a PHY clock as synchronous with CLK divided by 4
     // Needs to be 48 MHz
