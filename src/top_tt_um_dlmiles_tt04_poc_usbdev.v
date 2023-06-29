@@ -75,7 +75,7 @@ module tt_um_dlmiles_tt04_poc_usbdev (
     //assign uio_oe[2] = UIO_OE_OUTPUT;		// UIO 2: output: interrupts
     wire wb_WE;
     assign wb_WE = uio_in[2];
-    assign uio_out[2] = 1'b0;	// N/C
+    //assign uio_out[2] = 1'b0;	// N/C
     assign uio_oe[2] = UIO_OE_INPUT;		// UIO 2: input: wb_WE
 
     wire power;
