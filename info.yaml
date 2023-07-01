@@ -6,7 +6,9 @@ project:
 # If using an HDL, set wokwi_id as 0 and uncomment and list your source files here. 
 # Source files must be in ./src and you must list each source file separately
   source_files:
+    - tt_um.vh
     - top_tt_um_dlmiles_tt04_poc_usbdev.v
+    - tt04_to_wishbone.v
     - UsbDeviceTop.v
   top_module:  "tt_um_dlmiles_tt04_poc_usbdev"      # Put the name of your top module here, must start with "tt_um_". Make it unique by prepending your github username
 
