@@ -26,7 +26,7 @@ module tt_um_dlmiles_tt04_poc_usbdev (
     localparam UIO_OE_OUTPUT = `UIO_OE_OUTPUT;
 
     wire rst;
-    assign rst = !rst_n;
+    assign rst = !rst_n;	// We are a sync-reset module
 
     reg phyCd_clk;
     reg phyCd_reset;
@@ -38,7 +38,7 @@ module tt_um_dlmiles_tt04_poc_usbdev (
     // Simulates a PHY clock as synchronous with CLK divided by 4
     // Needs to be 48 MHz
     // Provides the clock domain a sync-reset signal based on our rst_n
-    always @(posedge clk or negedge rst) begin
+    always @(posedge clk or posedge rst) begin
         if (rst) begin
             phyCd_reset <= 1'b0;	// Forces observable rising edge for reset after the clock
             phyCd_resetNext <= 1'b1;	// has run at least once for each edge in the other clock domain
