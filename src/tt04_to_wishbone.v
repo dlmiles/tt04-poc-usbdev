@@ -84,9 +84,6 @@ module tt04_to_wishbone (
     reg [2:0] cmd_last;
     reg [1:0] pos;
 
-    wire [5:0] action;
-    assign action = {cmd_last, cmd};
-
     wire do_idle;
     assign do_idle = cmd == CMD_IDLE;
     wire do_exec;
@@ -111,18 +108,17 @@ module tt04_to_wishbone (
     wire exe_write;
     assign exe_write = do_exec && in8 == EXE_WRITE;
 
+    wire reset;
+    assign reset = !rst_n || exe_reset;
+
     always @(posedge clk) begin
-        if (!rst_n || exe_reset) begin	// sync reset
-            ADR <= 0;
-            DO <= 0;
-            DI <= 0;
-            cmd_last <= CMD_IDLE;
+        if (reset) begin	// sync reset
             pos <= 0;
         end
     end
 
     always @(posedge clk) begin
-        if (!rst_n || exe_reset) begin
+        if (reset) begin
             valid <= 0;
         end else if (!do_idle && !exe_read && !exe_write) begin
             valid <= 0;
@@ -139,7 +135,8 @@ module tt04_to_wishbone (
     localparam EXE_WRITE   = 8'h07;
 
     always @(posedge clk) begin
-        if (!rst_n || exe_reset) begin
+        if (reset) begin
+            DI <= 0;
             WE <= 0;
             CYC <= 0;
             STB <= 0;
@@ -184,7 +181,9 @@ module tt04_to_wishbone (
     end
 
     always @(posedge clk) begin
-        if (do_ad0) begin
+        if (reset) begin
+            ADR <= 0;
+        end else if (do_ad0) begin
             if (cmd_last == CMD_AD0) begin
                 if (pos[0])
                     ADR[8 +: 8] <= in8;
@@ -195,11 +194,7 @@ module tt04_to_wishbone (
                 ADR[0 +: 8] <= in8;	// pos=0
                 pos <= 1;
             end
-        end
-    end
-
-    always @(posedge clk) begin
-        if (do_ad1) begin
+        end else if (do_ad1) begin
             if (cmd_last == CMD_AD1) begin
                 if (pos[0])
                     ADR[8 +: 8] <= in8;
@@ -214,7 +209,9 @@ module tt04_to_wishbone (
     end
 
     always @(posedge clk) begin
-        if (do_do0) begin
+        if (reset) begin
+            DO <= 0;
+        end else if (do_do0) begin
             if (cmd_last == CMD_DO0) begin
                 if (pos == 2'd0)
                     DO[0 +: 8] <= in8;
@@ -229,11 +226,7 @@ module tt04_to_wishbone (
                 DO[0 +: 8] <= in8;	// pos=1
                 pos <= 1;
             end
-        end
-    end
-
-    always @(posedge clk) begin
-        if (do_do3) begin
+        end else if (do_do3) begin
             if (cmd_last == CMD_DO3) begin
                 if (pos == 2'd0)
                     DO[0 +: 8] <= in8;
@@ -252,7 +245,10 @@ module tt04_to_wishbone (
     end
 
     always @(posedge clk) begin
-        if (do_di0) begin
+        if (reset) begin
+            // NOOP
+            // Lets see if yosys can see drivers of 'pos' are mutually exclusive states
+        end else if (do_di0) begin
             if (cmd_last == CMD_DI0) begin
                 if (pos == 2'd0)
                     out8 <= DI[0 +: 8];
@@ -296,7 +292,11 @@ module tt04_to_wishbone (
     assign wb_DAT_MOSI[31:0] = DO;
 
     always @(posedge clk) begin
-       cmd_last <= cmd;
+        if (reset) begin
+            cmd_last <= CMD_IDLE;
+        end else begin
+            cmd_last <= cmd;
+        end
     end
 
 endmodule
