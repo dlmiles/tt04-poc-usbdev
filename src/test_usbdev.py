@@ -12,7 +12,7 @@ from cocotb.triggers import RisingEdge, FallingEdge, Timer, ClockCycles
 from cocotb.wavedrom import trace
 from cocotb.binary import BinaryValue
 
-import test_setup
+from test_setup import REG_FRAME
 from test_tt2wb import TT2WB, extract_bit
 import RomReader
 
@@ -389,6 +389,8 @@ async def test_usbdev(dut):
 
     ttwb = TT2WB(dut)
 
+
+
     await ttwb.exe_reset()
 
     await ttwb.exe_enable()
@@ -409,12 +411,12 @@ async def test_usbdev(dut):
 
     await ttwb.idle()
 
-    v = await ttwb.exe_write(0x0000, 0x76543210)
+    await ttwb.exe_write(0x0000, 0x76543210)
 
     v = await ttwb.exe_read(0x0000)
     assert(v == 0x76543210), f"unexpected readback of WB_READ(0x0000) = 0x{v:x} (expected 0x76543210)"
 
-    v = await ttwb.exe_write(0x0000, 0x00000000)
+    await ttwb.exe_write(0x0000, 0x00000000)
 
     v = await ttwb.exe_read(0x0000)
     assert(v == 0x00000000), f"unexpected readback of WB_READ(0x0000) = 0x{v:x} (expected 0x00000000)"
@@ -422,6 +424,20 @@ async def test_usbdev(dut):
     await ttwb.exe_disable()
 
     await ttwb.exe_reset()
+
+
+    await ttwb.exe_enable()
+
+    await ttwb.wb_dump(0x0000, 64)
+
+    for a in range(0, 64, 4):
+        i = a & 0xff
+        d = ((i+3) << 24) | ((i+2) << 16) | ((i+1) << 8) | (i)
+        await ttwb.exe_write(a, d)
+
+    await ttwb.wb_dump(0x0000, 64)
+
+    await ttwb.wb_dump(REG_FRAME, 0x30)
 
     report_resolvable(dut, depth=depth, filter=exclude_re_path)
 

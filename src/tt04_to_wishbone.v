@@ -83,7 +83,7 @@ module tt04_to_wishbone (
 
     reg [2:0] cmd_last;
     reg [1:0] pos;
-    reg [1:0] pos_next;	// placeholder expect pruned out
+    //reg [1:0] pos_next;	// placeholder expect pruned out
 
     wire do_idle;
     assign do_idle = cmd == CMD_IDLE;
@@ -210,17 +210,17 @@ module tt04_to_wishbone (
     always @(posedge clk) begin
         if (reset) begin
             ADR <= 0;
-            pos_next <= 0;
+            //pos_next <= 0;
         end else if (do_ad0) begin
             if (cmd_last == CMD_AD0) begin
                 if (pos[0])
                     ADR[8 +: 8] <= in8;
                 else
                     ADR[0 +: 8] <= in8;
-                pos_next <= pos + 1;
+                //pos_next <= pos + 1;
             end else begin
                 ADR[0 +: 8] <= in8;	// pos=0
-                pos_next <= 1;
+                //pos_next <= 1;
             end
         end else if (do_ad1) begin
             if (cmd_last == CMD_AD1) begin
@@ -228,10 +228,10 @@ module tt04_to_wishbone (
                     ADR[8 +: 8] <= in8;
                 else
                     ADR[0 +: 8] <= in8;
-                pos_next <= pos - 1;
+                //pos_next <= pos - 1;
             end else begin
                 ADR[8 +: 8] <= in8;	// pos=1
-                pos_next <= 0;
+                //pos_next <= 0;
             end
         end
     end
@@ -249,10 +249,10 @@ module tt04_to_wishbone (
                     DO[16 +: 8] <= in8;
                 else /*if (pos == 2'd3)*/
                     DO[24 +: 8] <= in8;
-                pos_next <= pos + 1;
+                //pos_next <= pos + 1;
             end else begin
                 DO[0 +: 8] <= in8;	// pos=1
-                pos_next <= 1;
+                //pos_next <= 1;
             end
         end else if (do_do3) begin
             if (cmd_last == CMD_DO3) begin
@@ -264,10 +264,10 @@ module tt04_to_wishbone (
                     DO[16 +: 8] <= in8;
                 else /*if (pos == 2'd3)*/
                     DO[24 +: 8] <= in8;
-                pos_next <= pos - 1;
+                //pos_next <= pos - 1;
             end else begin
                 DO[24 +: 8] <= in8;	// pos=3
-                pos_next <= 2;
+                //pos_next <= 2;
             end
         end
     end
@@ -286,11 +286,11 @@ module tt04_to_wishbone (
                     out8 <= DI[16 +: 8];
                 else /*if (pos == 2'd3)*/
                     out8 <= DI[24 +: 8];
-                pos_next <= pos + 1;
+                //pos_next <= pos + 1;
             end else begin
                 // We expose DI[7:0] by default, CMD_DI0 will send with DI[15:8]
                 out8 <= DI[8 +: 8];	// pos=1
-                pos_next <= 2;
+                //pos_next <= 2;
             end
         end else if (do_di3) begin
             if (cmd_last == CMD_DI3) begin
@@ -302,10 +302,10 @@ module tt04_to_wishbone (
                     out8 <= DI[16 +: 8];
                 else /*if (pos == 2'd3)*/
                     out8 <= DI[24 +: 8];
-                pos_next <= pos - 1;
+                //pos_next <= pos - 1;
             end else begin
                 out8 <= DI[24 +: 8];	// pos=3
-                pos_next <= 2;
+                //pos_next <= 2;
             end
         end else begin
             out8 = DI[0 +: 8]; // 8'bxxxxxxxx; debugging
