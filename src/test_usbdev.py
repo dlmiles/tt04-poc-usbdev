@@ -13,6 +13,7 @@ from cocotb.wavedrom import trace
 from cocotb.binary import BinaryValue
 
 import test_setup
+from test_tt2wb import TT2WB, extract_bit
 import RomReader
 
 
@@ -36,18 +37,6 @@ def try_binary(v, width=None):
         return BinaryValue(v, n_bits=width)
 
 
-# BinaryValue has Z and X states so need to extract
-# FIXME make a version for multiple bits/mask
-def extract_bit(v: BinaryValue, bit: int) -> bool:
-    assert(bit >= 0)
-    if type(v) is BinaryValue:
-        s = v.binstr
-        if bit+1 > v.n_bits:
-            raise Exception(f"{bit+1} > {v.n_bits} from {v}")
-        p = s[-(bit+1)]
-        #print("{} {} {} {} {} p={}".format(v, s, s[-(bit+2)], s[-(bit+1)], s[-(bit)], p))
-        return True if(p == '1') else False
-    raise Exception(f"type(v) is not BinaryValue: {type(v)}")
 
 
 # Useful when you want a particular format, but only if it is a number
@@ -107,7 +96,7 @@ def report_resolvable(dut, pfx = None, node = None, depth = None, filter = None)
             report_resolvable(dut, pfx + try_name(design_element) + '.', design_element, depth=depth - 1, filter=filter)	# recurse
         else:
             if filter is None or filter(design_element._path, design_element._name):
-                dut._log.info("{}{} = {}".format(pfx, try_name(design_element), type(design_element)))
+                dut._log.info("{}{} = {} {}".format(pfx, try_name(design_element), try_value(design_element), type(design_element)))
     pass
 
 
@@ -395,6 +384,44 @@ async def test_usbdev(dut):
     dut.uio_in.value = 0x20	# EXEC
     dut.ui_in.value = 0x01	# EXE_RESET
     await ClockCycles(dut.clk, 1)
+
+    await ClockCycles(dut.clk, 256)
+
+    ttwb = TT2WB(dut)
+
+    await ttwb.exe_reset()
+
+    await ttwb.exe_enable()
+
+    await ttwb.idle()
+
+    await ttwb.exe_disable()
+
+    await ttwb.idle()
+
+    await ttwb.exe_enable()
+
+    await ttwb.exe_write(0x1234, 0xfedcba98)
+    # test write cycle over WB
+
+    v = await ttwb.exe_read(0x0000)
+    # v == xxxxxxxx (uninit mem inside usbdev)
+
+    await ttwb.idle()
+
+    v = await ttwb.exe_write(0x0000, 0x76543210)
+
+    v = await ttwb.exe_read(0x0000)
+    assert(v == 0x76543210), f"unexpected readback of WB_READ(0x0000) = 0x{v:x} (expected 0x76543210)"
+
+    v = await ttwb.exe_write(0x0000, 0x00000000)
+
+    v = await ttwb.exe_read(0x0000)
+    assert(v == 0x00000000), f"unexpected readback of WB_READ(0x0000) = 0x{v:x} (expected 0x00000000)"
+
+    await ttwb.exe_disable()
+
+    await ttwb.exe_reset()
 
     report_resolvable(dut, depth=depth, filter=exclude_re_path)
 

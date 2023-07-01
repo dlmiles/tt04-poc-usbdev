@@ -108,25 +108,23 @@ module tt04_to_wishbone (
     wire exe_write;
     assign exe_write = do_exec && in8 == EXE_WRITE;
 
-    always @(posedge clk, negedge rst_n) begin
+    always @(posedge clk) begin
         if (!rst_n || exe_reset) begin	// sync reset
             ADR <= 0;
             DO <= 0;
             DI <= 0;
-            CYC <= 0;
-            STB <= 0;
-            WE <= 0;
-            valid <= 0;
-            issue <= 0;
             cmd_last <= CMD_IDLE;
             pos <= 0;
         end
     end
 
     always @(posedge clk) begin
-        if (!do_idle && !exe_read && !exe_write) begin
+        if (!rst_n || exe_reset) begin
             valid <= 0;
-            issue <= 0;
+        end else if (!do_idle && !exe_read && !exe_write) begin
+            valid <= 0;
+        end else if (issue && wb_ACK) begin
+            valid <= 1;
         end
     end
 
@@ -138,49 +136,63 @@ module tt04_to_wishbone (
     localparam EXE_WRITE   = 8'h07;
 
     always @(posedge clk) begin
-       if (do_exec) begin
-           case (in8)
-           EXE_RESET  : begin
-           end
-           EXE_ENABLE  : begin
-               CYC <= 1;
-           end
-           EXE_DISABLE : begin
-               CYC <= 0;
-               STB <= 0;
-           end
-           EXE_READ    : begin
-               if (!issue) begin
-                   WE <= 0;
-                   STB <= 1;
-                   issue <= 1;
-               end
-           end
-           EXE_WRITE   : begin
-               if (!issue) begin
-                   WE <= 1;
-                   STB <= 1;
-                   issue <= 1;
-               end
-           end
-           default  : ;
-           endcase
-       end
+        if (!rst_n || exe_reset) begin
+            WE <= 0;
+            CYC <= 0;
+            STB <= 0;
+            issue <= 0;
+        end else if (do_exec) begin
+            case (in8)
+            EXE_RESET  : begin	// use exe_reset
+            end
+            EXE_ENABLE  : begin
+                CYC <= 1;
+                issue <= 0;
+            end
+            EXE_DISABLE : begin
+                CYC <= 0;
+                STB <= 0;
+                issue <= 0;
+            end
+            EXE_READ    : begin
+                if (!issue) begin
+                    WE <= 0;
+                    STB <= 1;
+                    issue <= 1;
+                end
+            end
+            EXE_WRITE   : begin
+                if (!issue) begin
+                    WE <= 1;
+                    STB <= 1;
+                    issue <= 1;
+                end
+            end
+            default  : ;
+            endcase
+        end else if (!do_idle) begin
+            issue <= 0;
+        end
+        if (wb_ACK) begin
+            WE <= 0;
+            DI <= wb_DAT_MISO;
+            STB <= 0;
+        end
     end
 
     always @(posedge clk) begin
-       if (do_ad0) begin
-          if (cmd_last == CMD_AD0) begin
-             if (pos[0])
-                 ADR[8 +: 8] <= in8;
-             else
-                 ADR[0 +: 8] <= in8;
-             pos <= pos + 1;
-          end else begin
-             ADR[0 +: 8] <= in8;	// pos=0
-             pos <= 1;
-          end
-       end
+        if (do_ad0) begin
+            if (cmd_last == CMD_AD0) begin
+                if (pos[0])
+                    ADR[8 +: 8] <= in8;
+                else
+                    ADR[0 +: 8] <= in8;
+                pos <= pos + 1;
+            end else begin
+                ADR[0 +: 8] <= in8;	// pos=0
+                pos <= 1;
+            end
+        end
     end
 
     always @(posedge clk) begin
@@ -190,12 +202,12 @@ module tt04_to_wishbone (
                     ADR[8 +: 8] <= in8;
                 else
                     ADR[0 +: 8] <= in8;
-             pos <= pos - 1;
-          end else begin
-             ADR[8 +: 8] <= in8;	// pos=1
-             pos <= 0;
-          end
-       end
+                pos <= pos - 1;
+            end else begin
+                ADR[8 +: 8] <= in8;	// pos=1
+                pos <= 0;
+            end
+        end
     end
 
     always @(posedge clk) begin
@@ -209,10 +221,10 @@ module tt04_to_wishbone (
                     DO[16 +: 8] <= in8;
                 else /*if (pos == 2'd3)*/
                     DO[24 +: 8] <= in8;
-             pos <= pos + 1;
+                pos <= pos + 1;
             end else begin
-             DO[0 +: 8] <= in8;	// pos=1
-             pos <= 1;
+                DO[0 +: 8] <= in8;	// pos=1
+                pos <= 1;
             end
         end
     end
@@ -228,12 +240,12 @@ module tt04_to_wishbone (
                     DO[16 +: 8] <= in8;
                 else /*if (pos == 2'd3)*/
                     DO[24 +: 8] <= in8;
-             pos <= pos - 1;
-          end else begin
-             DO[24 +: 8] <= in8;	// pos=3
-             pos <= 2;
-          end
-       end
+                pos <= pos - 1;
+            end else begin
+                DO[24 +: 8] <= in8;	// pos=3
+                pos <= 2;
+            end
+        end
     end
 
     always @(posedge clk) begin
@@ -249,8 +261,9 @@ module tt04_to_wishbone (
                     out8 <= DI[24 +: 8];
                 pos <= pos + 1;
             end else begin
-                out8 <= DI[0 +: 8];	// pos=0
-                pos <= 1;
+                // We expose DI[7:0] by default, CMD_DI0 will send with DI[15:8]
+                out8 <= DI[8 +: 8];	// pos=1
+                pos <= 2;
             end
         end else if (do_di3) begin
             if (cmd_last == CMD_DI3) begin
@@ -268,7 +281,7 @@ module tt04_to_wishbone (
                 pos <= 2;
             end
         end else begin
-            out8 = DI[0 +: 8];
+            out8 = DI[0 +: 8]; // 8'bxxxxxxxx; debugging
         end
     end
 
@@ -278,15 +291,6 @@ module tt04_to_wishbone (
     assign wb_SEL[3:0] = {WE,WE,WE,WE};
     assign wb_ADR[13:0] = ADR;
     assign wb_DAT_MOSI[31:0] = DO;
-
-    always @(posedge clk) begin
-        if (wb_ACK) begin
-           WE <= 0;
-           DI <= wb_DAT_MISO;
-           STB <= 0;
-           valid <= 1;
-        end
-    end
 
     always @(posedge clk) begin
        cmd_last <= cmd;
