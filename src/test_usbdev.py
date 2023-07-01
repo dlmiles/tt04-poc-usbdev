@@ -12,6 +12,7 @@ from cocotb.triggers import RisingEdge, FallingEdge, Timer, ClockCycles
 from cocotb.wavedrom import trace
 from cocotb.binary import BinaryValue
 
+import test_setup
 import RomReader
 
 
@@ -33,6 +34,21 @@ def try_binary(v, width=None):
         return BinaryValue(v)
     else:
         return BinaryValue(v, n_bits=width)
+
+
+# BinaryValue has Z and X states so need to extract
+# FIXME make a version for multiple bits/mask
+def extract_bit(v: BinaryValue, bit: int) -> bool:
+    assert(bit >= 0)
+    if type(v) is BinaryValue:
+        s = v.binstr
+        if bit+1 > v.n_bits:
+            raise Exception(f"{bit+1} > {v.n_bits} from {v}")
+        p = s[-(bit+1)]
+        #print("{} {} {} {} {} p={}".format(v, s, s[-(bit+2)], s[-(bit+1)], s[-(bit)], p))
+        return True if(p == '1') else False
+    raise Exception(f"type(v) is not BinaryValue: {type(v)}")
+
 
 # Useful when you want a particular format, but only if it is a number
 #  try_decimal_format(valye, '3d')
@@ -308,11 +324,76 @@ async def test_usbdev(dut):
     ele = design_element(dut, 'dut.sync_reset')
     print("HH ele={} {}".format(try_path(ele), try_value(ele)))
 
-    dut.uio_in.value = 0x60
+    dut.uio_in.value = 0x20
+    dut.ui_in.value = 0x01
     await ClockCycles(dut.clk, 1)
-    while dut.dut.wb_ACK.value == 0:
-        await ClockCycles(dut.clk, 1)
+    #while dut.dut.wb_ACK.value == 0:
+    #    await ClockCycles(dut.clk, 1)
     dut.uio_in.value = 0x00
+    await ClockCycles(dut.clk, 1)
+
+    await ClockCycles(dut.clk, 1)
+
+    dut.uio_in.value = 0x20	# EXEC
+    dut.ui_in.value = 0x05	# EXE_ENABLE
+    await ClockCycles(dut.clk, 1)
+
+
+    dut.uio_in.value = 0x40
+    dut.ui_in.value = 0x21	# AD0
+    await ClockCycles(dut.clk, 1)
+    dut.uio_in.value = 0x60
+    dut.ui_in.value = 0x43	# AD1
+    await ClockCycles(dut.clk, 1)
+
+    dut.uio_in.value = 0x80
+    dut.ui_in.value = 0x98	# DO0
+    await ClockCycles(dut.clk, 1)
+    dut.uio_in.value = 0x80
+    dut.ui_in.value = 0xba	# DO1
+    await ClockCycles(dut.clk, 1)
+    dut.uio_in.value = 0x80
+    dut.ui_in.value = 0xdc	# DO2
+    await ClockCycles(dut.clk, 1)
+    dut.uio_in.value = 0x80
+    dut.ui_in.value = 0xfe	# DO3
+    await ClockCycles(dut.clk, 1)
+
+    dut.uio_in.value = 0x20	# EXEC
+    dut.ui_in.value = 0x07	# EXE_WRITE
+    await ClockCycles(dut.clk, 1)
+
+    while not extract_bit(dut.dut.uio_out.value, 4):
+        await ClockCycles(dut.clk, 1)
+
+    dut.uio_in.value = 0x20	# EXEC
+    dut.ui_in.value = 0x05	# EXE_ENABLE
+    await ClockCycles(dut.clk, 1)
+
+    dut.uio_in.value = 0x20	# EXEC
+    dut.ui_in.value = 0x07	# EXE_WRITE
+    await ClockCycles(dut.clk, 1)
+
+    while not extract_bit(dut.dut.uio_out.value, 4):
+        await ClockCycles(dut.clk, 1)
+
+    dut.uio_in.value = 0x20	# EXEC
+    dut.ui_in.value = 0x05	# EXE_ENABLE
+    await ClockCycles(dut.clk, 1)
+
+    dut.uio_in.value = 0x20	# EXEC
+    dut.ui_in.value = 0x06	# EXE_READ
+    await ClockCycles(dut.clk, 1)
+
+    while not extract_bit(dut.dut.uio_out.value, 4):
+        await ClockCycles(dut.clk, 1)
+
+    dut.uio_in.value = 0x20	# EXEC
+    dut.ui_in.value = 0x04	# EXE_DISABLE
+    await ClockCycles(dut.clk, 1)
+
+    dut.uio_in.value = 0x20	# EXEC
+    dut.ui_in.value = 0x01	# EXE_RESET
     await ClockCycles(dut.clk, 1)
 
     report_resolvable(dut, depth=depth, filter=exclude_re_path)
@@ -321,6 +402,9 @@ async def test_usbdev(dut):
     #reset_seq = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
     #await send_sequence_in8(dut, reset_seq)
 
+    await ClockCycles(dut.clk, 256)
+    await ClockCycles(dut.clk, 256)
+    await ClockCycles(dut.clk, 256)
     await ClockCycles(dut.clk, 256)
 
     # open rom.txt and run it

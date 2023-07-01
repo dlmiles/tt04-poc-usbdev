@@ -11,6 +11,7 @@ ifneq ($(GATES),yes)
 # this is the only part you should need to modify:
 VERILOG_SOURCES += $(PWD)/tbc_tt_um_dlmiles_tt04_poc_usbdev.v
 VERILOG_SOURCES += $(PWD)/top_tt_um_dlmiles_tt04_poc_usbdev.v
+VERILOG_SOURCES += $(PWD)/tt04_to_wishbone.v
 VERILOG_SOURCES += $(PWD)/UsbDeviceTop.v
 
 else
