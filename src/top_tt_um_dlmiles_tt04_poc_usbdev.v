@@ -89,6 +89,11 @@ module tt_um_dlmiles_tt04_poc_usbdev (
     wire [31:0] wb_DAT_MISO;
     wire [31:0] wb_DAT_MOSI;
 
+    // This is slicing off the top 4 bits while ignoring the bottom 4 bits
+    // Otherwise even through they (bottom 4 bits) are not connect in tt2wb we get error
+    wire [7:0] uio_oe_tmp;
+    assign uio_oe[7:4] = uio_oe_tmp[7:4];
+
     tt04_to_wishbone tt2wb (
         .clk                (clk),                      //i
         .rst_n              (rst_n),                    //i
@@ -98,7 +103,7 @@ module tt_um_dlmiles_tt04_poc_usbdev (
         .ui_in              (ui_in),                    //i
         .uio_out            (uio_out),                  //o
         .uio_in             (uio_in),                   //i
-        .uio_oe             (uio_oe),                   //o
+        .uio_oe             (uio_oe_tmp),               //o
 
         .wb_CYC             (wb_CYC),			//o
         .wb_STB             (wb_STB),			//o
