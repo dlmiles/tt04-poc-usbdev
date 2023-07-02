@@ -218,6 +218,10 @@ def resolve_GL_TEST():
     return gl_test
 
 
+EP_COUNT = 2
+ADDRESS_LENGTH = 68
+MAX_PACKET_LENGTH = 40
+
 @cocotb.test()
 async def test_usbdev(dut):
     dut._log.info("start")
@@ -428,15 +432,15 @@ async def test_usbdev(dut):
 
     await ttwb.exe_enable()
 
-    await ttwb.wb_dump(0x0000, 64)
+    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
 
-    for a in range(0, 64, 4):
+    for a in range(0, ADDRESS_LENGTH+1, 4):
         i = a & 0xff
         d = ((i+3) << 24) | ((i+2) << 16) | ((i+1) << 8) | (i)
         await ttwb.exe_write(a, d)
 
     end_of_buffer = -1
-    for a in range(0, 64, 4):
+    for a in range(0, ADDRESS_LENGTH+1, 4):
         i = a & 0xff
         expect = ((i+3) << 24) | ((i+2) << 16) | ((i+1) << 8) | (i)
         d = await ttwb.exe_read_BinaryValue(a)
@@ -447,15 +451,15 @@ async def test_usbdev(dut):
     dut._log.info("END_OF_BUFFER = 0x{:04x} {}d".format(end_of_buffer, end_of_buffer))
 
 
-    await ttwb.wb_dump(0x0000, 64)
+    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
 
     await ttwb.wb_dump(REG_FRAME, 0x30)
 
 
-    for a in range(0, 64, 4):	# zero out memory buffer
+    for a in range(0, ADDRESS_LENGTH+1, 4):	# zero out memory buffer
         await ttwb.exe_write(a, 0x00000000)
 
-    await ttwb.wb_dump(0x0000, 64)
+    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
 
     await ClockCycles(dut.clk, 256)
 
@@ -472,7 +476,7 @@ async def test_usbdev(dut):
 
     await usbdev.setup()
 
-    await ttwb.wb_dump(0x0000, 64)
+    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
     await ttwb.wb_dump(0xff00, 4)
     await ttwb.wb_dump(0xff04, 4)
     await ttwb.wb_dump(0xff08, 4)

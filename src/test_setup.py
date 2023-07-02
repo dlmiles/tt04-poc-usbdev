@@ -33,7 +33,7 @@ BUF_DATA1 = 0x0024
 BUF_DATA2 = 0x0028
 BUF_DATA3 = 0x002c
 
-BUF_END = 0x003c
+BUF_END = 0x0048
 
 ADDR_DESC = {
     REG_FRAME: "REG_FRAME",
@@ -232,7 +232,7 @@ class USBDEV():
 
 
         # ENABLE INTERRUPTS
-        await self.bus.wb_write(REG_CONFIG, build_config(interrupt_enable_set=True))
+        await self.bus.wb_write(REG_CONFIG, build_config(interrupt_enable_set=True, pullup_set=True))
 
 
 
