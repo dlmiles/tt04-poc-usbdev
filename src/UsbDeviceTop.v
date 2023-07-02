@@ -1760,6 +1760,7 @@ module UsbDeviceCtrl (
 
   reg                 token_crc5_io_flush;
   reg                 token_crc5_io_input_valid;
+  wire       [15:0]   token_crc5rx_io_data;
   reg                 token_crc5rx_io_enable;
   reg                 token_crc5rx_io_init;
   reg                 dataRx_crc16rx_io_enable;
@@ -2030,11 +2031,11 @@ module UsbDeviceCtrl (
   reg        [2:0]    token_stateReg;
   reg        [2:0]    token_stateNext;
   wire                when_UsbTokenRxFsm_l47;
+  wire                when_UsbTokenRxFsm_l75;
   wire                when_UsbTokenRxFsm_l76;
-  wire                when_UsbTokenRxFsm_l77;
-  wire                when_UsbTokenRxFsm_l88;
+  wire                when_UsbTokenRxFsm_l87;
   wire                when_StateMachine_l237;
-  wire                when_UsbTokenRxFsm_l94;
+  wire                when_UsbTokenRxFsm_l93;
   reg        [4:0]    active_stateReg;
   reg        [4:0]    active_stateNext;
   wire                when_UsbDeviceCtrl_l443;
@@ -2161,13 +2162,13 @@ module UsbDeviceCtrl (
     .ctrlCd_reset     (ctrlCd_reset                 )  //i
   );
   USBCRC5 token_crc5rx (
-    .io_data      (token_data[10:0]        ), //i
-    .io_enable    (token_crc5rx_io_enable  ), //i
-    .io_init      (token_crc5rx_io_init    ), //i
-    .io_crc       (token_crc5rx_io_crc[4:0]), //o
-    .io_crcError  (token_crc5rx_io_crcError), //o
-    .ctrlCd_clk   (ctrlCd_clk              ), //i
-    .ctrlCd_reset (ctrlCd_reset            )  //i
+    .io_data      (token_crc5rx_io_data[15:0]), //i
+    .io_enable    (token_crc5rx_io_enable    ), //i
+    .io_init      (token_crc5rx_io_init      ), //i
+    .io_crc       (token_crc5rx_io_crc[4:0]  ), //o
+    .io_crcError  (token_crc5rx_io_crcError  ), //o
+    .ctrlCd_clk   (ctrlCd_clk                ), //i
+    .ctrlCd_reset (ctrlCd_reset              )  //i
   );
   USBCRC16 dataRx_crc16rx (
     .io_data      (io_phy_rx_flow_payload[7:0]), //i
@@ -3108,19 +3109,19 @@ module UsbDeviceCtrl (
       token_enumDef_DATA_1 : begin
       end
       token_enumDef_CHECK : begin
-        if(when_UsbTokenRxFsm_l76) begin
+        if(when_UsbTokenRxFsm_l75) begin
           token_wantExit = 1'b1;
         end
       end
       token_enumDef_ERROR : begin
-        if(when_UsbTokenRxFsm_l88) begin
+        if(when_UsbTokenRxFsm_l87) begin
           token_wantExit = 1'b1;
         end
       end
       default : begin
       end
     endcase
-    if(when_UsbTokenRxFsm_l94) begin
+    if(when_UsbTokenRxFsm_l93) begin
       if(rxTimer_timeout) begin
         token_wantExit = 1'b1;
       end
@@ -3176,7 +3177,9 @@ module UsbDeviceCtrl (
       token_enumDef_DATA_0 : begin
       end
       token_enumDef_DATA_1 : begin
-        token_crc5rx_io_init = 1'b0;
+        if(io_phy_rx_flow_valid) begin
+          token_crc5rx_io_init = 1'b0;
+        end
       end
       token_enumDef_CHECK : begin
         token_crc5rx_io_init = 1'b0;
@@ -3201,7 +3204,6 @@ module UsbDeviceCtrl (
         end
       end
       token_enumDef_CHECK : begin
-        token_crc5rx_io_enable = 1'b1;
       end
       token_enumDef_ERROR : begin
       end
@@ -3210,6 +3212,7 @@ module UsbDeviceCtrl (
     endcase
   end
 
+  assign token_crc5rx_io_data = {io_phy_rx_flow_payload[7 : 0],token_data[7 : 0]};
   assign token_isSetup = (token_pid == 4'b1101);
   assign token_isIn = (token_pid == 4'b1001);
   assign regs_halt_hit = (regs_halt_enable && (_zz_regs_halt_hit == token_endpoint));
@@ -4212,7 +4215,7 @@ module UsbDeviceCtrl (
         end
       end
       token_enumDef_CHECK : begin
-        if(when_UsbTokenRxFsm_l76) begin
+        if(when_UsbTokenRxFsm_l75) begin
           token_stateNext = token_enumDef_BOOT;
         end
         if(io_phy_rx_flow_valid) begin
@@ -4220,14 +4223,14 @@ module UsbDeviceCtrl (
         end
       end
       token_enumDef_ERROR : begin
-        if(when_UsbTokenRxFsm_l88) begin
+        if(when_UsbTokenRxFsm_l87) begin
           token_stateNext = token_enumDef_BOOT;
         end
       end
       default : begin
       end
     endcase
-    if(when_UsbTokenRxFsm_l94) begin
+    if(when_UsbTokenRxFsm_l93) begin
       if(rxTimer_timeout) begin
         token_stateNext = token_enumDef_BOOT;
       end
@@ -4241,11 +4244,11 @@ module UsbDeviceCtrl (
   end
 
   assign when_UsbTokenRxFsm_l47 = (io_phy_rx_flow_payload[3 : 0] == (~ io_phy_rx_flow_payload[7 : 4]));
-  assign when_UsbTokenRxFsm_l76 = (! io_phy_rx_active);
-  assign when_UsbTokenRxFsm_l77 = ((token_crc5_io_result == 5'h0c) && (! token_crc5rx_io_crcError));
-  assign when_UsbTokenRxFsm_l88 = (! io_phy_rx_active);
+  assign when_UsbTokenRxFsm_l75 = (! io_phy_rx_active);
+  assign when_UsbTokenRxFsm_l76 = ((token_crc5_io_result == 5'h0c) && (! token_crc5rx_io_crcError));
+  assign when_UsbTokenRxFsm_l87 = (! io_phy_rx_active);
   assign when_StateMachine_l237 = ((token_stateReg == token_enumDef_BOOT) && (! (token_stateNext == token_enumDef_BOOT)));
-  assign when_UsbTokenRxFsm_l94 = (! (token_stateReg == token_enumDef_BOOT));
+  assign when_UsbTokenRxFsm_l93 = (! (token_stateReg == token_enumDef_BOOT));
   always @(*) begin
     active_stateNext = active_stateReg;
     case(active_stateReg)
@@ -4877,8 +4880,8 @@ module UsbDeviceCtrl (
         end
       end
       token_enumDef_CHECK : begin
-        if(when_UsbTokenRxFsm_l76) begin
-          if(when_UsbTokenRxFsm_l77) begin
+        if(when_UsbTokenRxFsm_l75) begin
+          if(when_UsbTokenRxFsm_l76) begin
             token_ok <= 1'b1;
           end
         end
@@ -5593,7 +5596,7 @@ module USBCRC16 (
 endmodule
 
 module USBCRC5 (
-  input      [10:0]   io_data,
+  input      [15:0]   io_data,
   input               io_enable,
   input               io_init,
   output     [4:0]    io_crc,
@@ -5617,11 +5620,11 @@ module USBCRC5 (
   assign _zz_VERIFY_VALUE = 16'h0006;
   assign INITIAL_VALUE = _zz_INITIAL_VALUE[4:0];
   assign VERIFY_VALUE = _zz_VERIFY_VALUE[4:0];
-  assign crcNext_0 = ((((((((crc_1[0] ^ crc_1[1]) ^ crc_1[2]) ^ io_data[0]) ^ io_data[1]) ^ io_data[2]) ^ io_data[5]) ^ io_data[6]) ^ io_data[8]);
-  assign crcNext_1 = ((((((((((crc_1[0] ^ crc_1[1]) ^ crc_1[2]) ^ crc_1[3]) ^ io_data[0]) ^ io_data[1]) ^ io_data[2]) ^ io_data[3]) ^ io_data[6]) ^ io_data[7]) ^ io_data[9]);
-  assign crcNext_2 = ((((((((((((crc_1[0] ^ crc_1[1]) ^ crc_1[2]) ^ crc_1[3]) ^ crc_1[4]) ^ io_data[0]) ^ io_data[1]) ^ io_data[2]) ^ io_data[3]) ^ io_data[4]) ^ io_data[7]) ^ io_data[8]) ^ io_data[10]);
-  assign crcNext_3 = (((((((crc_1[0] ^ crc_1[3]) ^ crc_1[4]) ^ io_data[0]) ^ io_data[3]) ^ io_data[4]) ^ io_data[6]) ^ io_data[9]);
-  assign crcNext_4 = ((((((((crc_1[0] ^ crc_1[1]) ^ crc_1[4]) ^ io_data[0]) ^ io_data[1]) ^ io_data[4]) ^ io_data[5]) ^ io_data[7]) ^ io_data[10]);
+  assign crcNext_0 = (((((((((crc_1[3] ^ crc_1[4]) ^ io_data[3]) ^ io_data[4]) ^ io_data[5]) ^ io_data[6]) ^ io_data[7]) ^ io_data[10]) ^ io_data[11]) ^ io_data[13]);
+  assign crcNext_1 = ((((((((((crc_1[0] ^ crc_1[4]) ^ io_data[0]) ^ io_data[4]) ^ io_data[5]) ^ io_data[6]) ^ io_data[7]) ^ io_data[8]) ^ io_data[11]) ^ io_data[12]) ^ io_data[14]);
+  assign crcNext_2 = (((((((((((crc_1[0] ^ crc_1[1]) ^ io_data[0]) ^ io_data[1]) ^ io_data[5]) ^ io_data[6]) ^ io_data[7]) ^ io_data[8]) ^ io_data[9]) ^ io_data[12]) ^ io_data[13]) ^ io_data[15]);
+  assign crcNext_3 = ((((((((((((crc_1[1] ^ crc_1[2]) ^ crc_1[3]) ^ crc_1[4]) ^ io_data[1]) ^ io_data[2]) ^ io_data[3]) ^ io_data[4]) ^ io_data[5]) ^ io_data[8]) ^ io_data[9]) ^ io_data[11]) ^ io_data[14]);
+  assign crcNext_4 = (((((((((((crc_1[2] ^ crc_1[3]) ^ crc_1[4]) ^ io_data[2]) ^ io_data[3]) ^ io_data[4]) ^ io_data[5]) ^ io_data[6]) ^ io_data[9]) ^ io_data[10]) ^ io_data[12]) ^ io_data[15]);
   assign io_crc = crc_1;
   assign io_crcError = (crc_1 != VERIFY_VALUE);
   always @(posedge ctrlCd_clk or posedge ctrlCd_reset) begin
