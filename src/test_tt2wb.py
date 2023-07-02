@@ -169,8 +169,8 @@ class TT2WB():
     async def exe_read_BinaryValue(self, addr: int) -> tuple:
         self.check_enable()
         addr = self.check_address(addr)
-        await self.send(CMD_AD0, self.addr_to_bus(addr & 0xff))
-        await self.send(CMD_AD1, self.addr_to_bus((addr >> 8) & 0xff))
+        await self.send(CMD_AD0, self.addr_to_bus(addr) & 0xff)	## FIXME BUS_MASK
+        await self.send(CMD_AD1, (self.addr_to_bus(addr) >> 8) & 0xff)
         await self.send(CMD_EXEC, EXE_READ)
         self.dut._log.debug("WB_READ  0x{:04x}".format(addr))
 

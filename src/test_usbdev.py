@@ -457,6 +457,13 @@ async def test_usbdev(dut):
 
     await ttwb.wb_dump(0x0000, 64)
 
+    await ClockCycles(dut.clk, 256)
+
+    # Confirmed repeated memory buffer from 0x0000 to 0x7fff
+    # From 0x8000 zeros until 0xff00
+    # Then readable registers visible of zeros
+    #await ttwb.wb_dump(0x0000, 0x10000)
+
     report_resolvable(dut, depth=depth, filter=exclude_re_path)
 
     await ClockCycles(dut.clk, 256)
@@ -465,14 +472,36 @@ async def test_usbdev(dut):
 
     await usbdev.setup()
 
+    await ttwb.wb_dump(0x0000, 64)
+    await ttwb.wb_dump(0xff00, 4)
+    await ttwb.wb_dump(0xff04, 4)
+    await ttwb.wb_dump(0xff08, 4)
+    await ttwb.wb_dump(0xff0c, 4)
+    await ttwb.wb_dump(0xff10, 4)
+    await ttwb.wb_dump(0xff20, 4)
 
     # Perform reset sequence
     #reset_seq = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
     #await send_sequence_in8(dut, reset_seq)
 
     await ClockCycles(dut.clk, 256)
-    await ClockCycles(dut.clk, 256)
-    await ClockCycles(dut.clk, 256)
+
+    # TODO work out how to get the receiver started
+    #  for a start writeEnable of DP&DM is set
+    dut.uio_in.value = dut.uio_in.value | 0x08	# POWER bit3
+
+    # Inject noise into the signals, clock/1
+
+    # Inject noise into the signals, clock/2
+
+    # Inject noise into the signals, clock/4
+
+    # Inject valid packet, clock/4
+
+
+
+    #await ClockCycles(dut.clk, 256)
+    #await ClockCycles(dut.clk, 256)
     await ClockCycles(dut.clk, 256)
 
     # open rom.txt and run it

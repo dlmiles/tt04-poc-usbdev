@@ -62,8 +62,8 @@ def build_endp(
         enable: bool = False,
         stall: bool = False,
         nack: bool = False,
-        data_phase: bool = False,
-        head: int = 0,
+        data_phase_n: bool = False, # this appears to have inverted meaning
+        head: int = 0, # 16byte units
         isochronous: bool = False,
         max_packet_size: int = 0
     ) -> int:
@@ -74,7 +74,7 @@ def build_endp(
         val |= 0x00002	# bit1
     if nack:
         val |= 0x00004	# bit2
-    if data_phase:
+    if data_phase_n:
         val |= 0x00008	# bit3
     assert head & ~0xfff == 0, f"head out of range {head}"
     val |= (head & 0xfff) << 4	# bit4..15 (12bits)
@@ -205,7 +205,10 @@ class USBDEV():
         # Not needed but we do it to peek at state
         data = await self.bus.wb_read(REG_HALT)
 
-        await self.bus.wb_write(BUF_EP0, build_endp(enable=True)) #
+        await self.bus.wb_write(BUF_DESC0, 0x00ff0000)	# code=INPROGRESS
+        await self.bus.wb_write(BUF_DESC1, 0x00140000)	# length=20
+        await self.bus.wb_write(BUF_DESC2, 0x00030000)	# dir=IN, interrupt=true
+        await self.bus.wb_write(BUF_EP0, build_endp(enable=True, data_phase_n=True, head=1, max_packet_size=20)) #
 
         await self.bus.wb_write(REG_HALT, build_halt(endp=0, enable=True)) # HALT EP=0 (unhalt)
 
@@ -216,7 +219,10 @@ class USBDEV():
         # Not needed but we do it to peek at state
         data = await self.bus.wb_read(REG_HALT)
 
-        await self.bus.wb_write(BUF_EP1, build_endp(enable=True)) #
+        await self.bus.wb_write(0x0030, 0x00ff0000)  # code=INPROGRESS
+        await self.bus.wb_write(0x0034, 0x00080000)  # length=8
+        await self.bus.wb_write(0x0038, 0x00030000)  # dir=IN, interrupt=true
+        await self.bus.wb_write(BUF_EP1, build_endp(enable=True, data_phase_n=True, head=3, max_packet_size=8)) #
 
         await self.bus.wb_write(REG_HALT, build_halt(endp=1, enable=True)) # HALT EP=1 (unhalt)
 

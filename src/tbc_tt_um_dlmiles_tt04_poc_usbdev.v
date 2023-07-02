@@ -21,7 +21,8 @@ module tb_usbdev (
 );
 
     initial begin
-        $dumpfile ("tb_usbdev.vcd");
+        //$dumpfile ("tb_usbdev.vcd");
+        $dumpfile ("tb.vcd");	// Renamed for GHA
         $dumpvars (0, tb_usbdev);
         #1;
     end
