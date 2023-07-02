@@ -85,6 +85,21 @@ def build_endp(
     return val
 
 
+def build_address(
+        address: int = 0,
+        enable: bool = False,
+        trigger: bool = False
+    ) -> int:
+    val = 0
+    assert (address & ~0x7f == 0), f"address is invalid and out of range {address}"
+    val |= address & 0x7f  # bit0-6
+    if enable:
+        val |= 0x00000100  # bit8
+    if trigger:
+        val |= 0x00000200  # bit9
+    return val
+
+
 def build_interrupt(
         endp: int = -1,
         reset: bool = False,
@@ -199,6 +214,8 @@ class USBDEV():
         await self.bus.wb_dump(BUF_EP0, BUF_END)
 
 
+        await self.bus.wb_write(REG_ADDRESS, build_address(address=0, enable=False, trigger=False))
+
         # ENDPOINT#0
         await self.bus.wb_write(REG_HALT, build_halt(endp=0)) # HALT EP=0
 
@@ -208,7 +225,7 @@ class USBDEV():
         await self.bus.wb_write(BUF_DESC0, 0x00ff0000)	# code=INPROGRESS
         await self.bus.wb_write(BUF_DESC1, 0x00140000)	# length=20
         await self.bus.wb_write(BUF_DESC2, 0x00030000)	# dir=IN, interrupt=true
-        await self.bus.wb_write(BUF_EP0, build_endp(enable=True, data_phase_n=True, head=1, max_packet_size=20)) #
+        await self.bus.wb_write(BUF_EP0, build_endp(enable=True, data_phase_n=False, head=1, max_packet_size=20)) #
 
         await self.bus.wb_write(REG_HALT, build_halt(endp=0, enable=True)) # HALT EP=0 (unhalt)
 
@@ -222,7 +239,7 @@ class USBDEV():
         await self.bus.wb_write(0x0030, 0x00ff0000)  # code=INPROGRESS
         await self.bus.wb_write(0x0034, 0x00080000)  # length=8
         await self.bus.wb_write(0x0038, 0x00030000)  # dir=IN, interrupt=true
-        await self.bus.wb_write(BUF_EP1, build_endp(enable=True, data_phase_n=True, head=3, max_packet_size=8)) #
+        await self.bus.wb_write(BUF_EP1, build_endp(enable=True, data_phase_n=False, head=3, max_packet_size=8)) #
 
         await self.bus.wb_write(REG_HALT, build_halt(endp=1, enable=True)) # HALT EP=1 (unhalt)
 

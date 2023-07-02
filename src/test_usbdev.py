@@ -562,6 +562,22 @@ async def test_usbdev(dut):
     else:
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SKIPPED".format(reset_ticks))
 
+    v = await ttwb.wb_read(0xff08)
+    assert v & 0x00010000 != 0, f"REG_INTERRUPT expected to see: RESET"
+    # FIXME check out the RC status is correct or if it should be RWC
+    await ttwb.wb_write(0xff08, 0x00010000)
+    v = await ttwb.wb_read(0xff08)	# RC
+    if v & 0x00010000 != 0:
+        dut._log.warning("REG_INTERRUPT expected to see: RESET bit clear {:08x}".format(v))
+    #assert v & 0x00010000 == 0, f"REG_INTERRUPT expected to see: RESET bit clear"
+    #assert v == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{v:08x}"
+
+    # FIXME
+    # REG_INTERRUPT also has 0x0010000 set for DISCONNECT
+    await ttwb.wb_write(0xff08, 0x00100000)
+    v = await ttwb.wb_read(0xff08)	# RC
+    if v & 0x00100000 != 0:
+        dut._log.warning("REG_INTERRUPT expected to see: DISCONNECT bit clear {:08x}".format(v))
 
     # FIXME fetch out before and check ATTACHED
     # FIXME fetch out before and check POWERED
@@ -594,8 +610,9 @@ async def test_usbdev(dut):
     await usb.send_0()
     await usb.send_0()  # MSB7
 
-    # ADDR=0000001b
-    await usb.send_1()  # LSB0
+    # Sending ADDR=0000001b is ignored after RESET, maybe can setup REG_ADDRESS(addr=1,enable=true)
+    # ADDR=0000000b
+    await usb.send_0()  # LSB0
     await usb.send_0()
     await usb.send_0()
     await usb.send_0()
@@ -609,18 +626,73 @@ async def test_usbdev(dut):
     await usb.send_0()
     await usb.send_0()  # MSB3
 
-    # CRC5=11101b 0x1d
-    await usb.send_1()  # LSB0
+    # CRC5=11101b 0x1d (a=0x01, e=0x0)
+    # CRC5=00010b 0x02 (a=0x00, e=0x0)
+    await usb.send_0()  # LSB0
+    await usb.send_1()
     await usb.send_0()
-    await usb.send_1()
-    await usb.send_1()
-    await usb.send_1()  # MSB4
+    await usb.send_0()
+    await usb.send_0()  # MSB4
 
     # EOP  SE0 SE0 J IDLE
     await usb.send_SE0()
     await usb.send_SE0()
     await usb.send_J()
+
+    # SYNC sequence 8'b00000001  KJKJKJKK
+    await usb.send_0()	# LSB0
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_1()	# MSB7
+
+    # DATA0 PID=1100b 0011b
+    await usb.send_1()  # LSB0
+    await usb.send_1()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_1()
+    await usb.send_1()  # MSB7
+
+
+    #setup = (0x04030201, 0x08070605, 0x304f)
+    setup = (0x00000000, 0x00000000, 0xf4bf)
+    #setup = (0xffffffff, 0xffffffff, 0x70fe)
+
+    await usb.send_data(setup[0], 32)	# DATA[0..3]
+    await usb.send_data(setup[1])	# DATA[4..7]
+
+    # CRC16= (0x01 0x02 0x03 0x04)
+    await usb.send_data(setup[-1], 16)
+
+    # EOP  SE0 SE0 J IDLE
+    await usb.send_SE0()
+    await usb.send_SE0()
+    await usb.send_J()
+
     await usb.send_idle()
+
+
+    v = await ttwb.wb_read(0x0008)
+    assert v == setup[0], f"SETUP0 expected to see: SETUP payload+0 0x{setup[0]:08x} is 0x{v:08x}"
+    v = await ttwb.wb_read(0x000c)
+    assert v == setup[1], f"SETUP1 expected to see: SETUP payload+4 0x{setup[1]:08x} is 0x{v:08x}"
+
+    v = await ttwb.wb_read(0xff08)
+    assert v & 0x00020000 != 0, f"REG_INTERRUPT expected to see: EP0SETUP"
+    # FIXME check out the RC status is correct or if it should be RWC
+    await ttwb.wb_write(0xff08, 0x00020000)
+    v = await ttwb.wb_read(0xff08)	# RC
+    if v & 0x00020000 != 0:
+        dut._log.warning("REG_INTERRUPT expected to see: EP0SETUP bit clear {:08x}".format(v))
+    #assert v & 0x00010000 == 0, f"REG_INTERRUPT expected to see: EP0SETUP bit clear"
+    #assert v == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{v:08x}"
+
 
     # FIXME check state machine for error
 
@@ -711,18 +783,22 @@ class NRZI():
         self.nrzi_one_count = 0
         self.nrzi_last = last
 
-    def nrzi(self, whoami: str):
+    async def nrzi(self, whoami: str):
         assert(whoami == 'J' or whoami == 'K')
         if(self.nrzi_last != whoami):
             self.nrzi_one_count = 0
         else:
             self.nrzi_one_count += 1
+        #elif not self.LOW_SPEED and whoami == 'J':
+        #    self.nrzi_one_count += 1 # only stuff 1's
+        #elif self.LOW_SPEED and whoami == 'K':
+        #    self.nrzi_one_count += 1 # only stuff 1's
         self.nrzi_last = whoami
         if self.nrzi_one_count >= 6:
             if whoami == 'J':
-                self.send_K()
+                await self.send_K()
             else:
-                self.send_J()
+                await self.send_J()
 
     async def update(self, or_mask: int, ticks: int = None) -> int:
         v = self.dut.uio_in.value & ~self.MASK | or_mask
@@ -742,14 +818,14 @@ class NRZI():
             await self.update(self.LS_J)
         else:
             await self.update(self.HS_J)
-        self.nrzi('J')
+        await self.nrzi('J')
 
     async def send_K(self) -> None:
         if self.LOW_SPEED:
             await self.update(self.LS_K)
         else:
             await self.update(self.HS_K)
-        self.nrzi('K')
+        await self.nrzi('K')
 
     async def send_0(self) -> None:
         if self.nrzi_last == 'K':
@@ -767,9 +843,22 @@ class NRZI():
         else:
             assert False, f"use send_idle() first"
 
+    async def send_bf(self, bit: bool) -> None:
+        if bit:
+            await self.send_1()
+        else:
+            await self.send_0()
+
     async def send_idle(self) -> None:
         if self.LOW_SPEED:
             await self.update(self.LS_J)	# aka IDLE
         else:
             await self.update(self.HS_J)	# aka IDLE
         self.reset('J')
+
+    async def send_data(self, data: int, bits: int = 32) -> None:
+        assert(bits >= 0 and bits <= 32)
+        for i in range(0, bits):	# LSB first
+            bv = data & (1 << i)
+            bf = bv != 0
+            await self.send_bf(bf)
