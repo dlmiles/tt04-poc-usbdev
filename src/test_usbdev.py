@@ -218,6 +218,30 @@ def resolve_GL_TEST():
     return gl_test
 
 
+def grep_file(filename: str, pattern1: str, pattern2: str) -> bool:
+    # FIXME maybe we exec sed -e '' -i filename?
+    # PRODUCTION
+    # -  assign rx_timerLong_resume = (rx_timerLong_counter == 23'h0e933f);
+    # -  assign rx_timerLong_reset = (rx_timerLong_counter == 23'h07403f);
+    # -  assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h021fbf);
+    # SIM
+    # +  assign rx_timerLong_resume = (rx_timerLong_counter == 23'h0012a7);
+    # +  assign rx_timerLong_reset = (rx_timerLong_counter == 23'h000947);
+    # +  assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h0002b7);
+    with open(filename) as file_in:
+        lines = []
+        for line in file_in:
+            lines.append(line.rstrip())
+        left = list(filter(lambda l: re.search(pattern1, l), lines))
+        # search for a single line match of pattern1 in the whole file (error if not found, or multiple lines)
+        if len(left) == 1:
+            # search the line found for pattern2 and return True/False on this
+            retval = re.search(pattern2, left[0])
+            #print("left={} {}".format(left[0], retval))
+            return retval
+    raise Exception(f"Unable to find any match from file: {filename} for regex {pattern1}")
+
+
 EP_COUNT = 2
 ADDRESS_LENGTH = 68
 MAX_PACKET_LENGTH = 40
@@ -490,9 +514,115 @@ async def test_usbdev(dut):
 
     await ClockCycles(dut.clk, 256)
 
+    PHY_CLK_FACTOR = 8	# 4 per edge
+    OVERSAMPLE = 4
+    TICKS_PER_BIT = PHY_CLK_FACTOR * OVERSAMPLE
+
+    # FIXME why are both the WriteEnable high for output at startup
+
     # TODO work out how to get the receiver started
     #  for a start writeEnable of DP&DM is set
     dut.uio_in.value = dut.uio_in.value | 0x08	# POWER bit3
+    await ClockCycles(dut.clk, 128)
+
+    usb = NRZI(dut, TICKS_PER_BIT = TICKS_PER_BIT)
+
+    #############################################################################################
+    # Reset 10ms (ok this sequnce works but takes too long to simulate, for test/debug)
+    await usb.send_SE0()	# !D+ bit0 !D- bit1 = SE0 RESET
+
+    # FIXME
+    reset_ticks = int((48000000 / 100) * PHY_CLK_FACTOR)	# 48MHz for 10ms
+
+    ## auto-detect and also
+
+    ##egrep "rx_timerLong_reset =" UsbDeviceTop.v # 23'h07403f ## FULL
+    if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h07403f"):
+        ticks = reset_ticks	## ENABLE
+
+    ## egrep "rx_timerLong_reset =" UsbDeviceTop.v ## 23'h000947
+    if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h000947"):
+        ticks = int(reset_ticks / 200)	## ENABLE 1/200th
+        dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-200th = {}".format(reset_ticks, ticks))
+        if 'CI' in os.environ and os.environ['CI'] == 'true':
+            dut._log.warning("You are building GDS for production but are using UsbDeviceTop.v with simulation modified timer values".format(reset_ticks, ticks))
+            exit(1)	## failure ?
+
+    #ticks = 0		## DISABLE
+
+    if ticks > 38400:
+        PER_ITER = 38400
+        dut._log.info("RESET ticks = {} ({}-per-iteration)".format(ticks, PER_ITER))
+        for i in range(0, int(ticks / PER_ITER)):
+            await ClockCycles(dut.clk, PER_ITER)
+            total_ticks = (i+1)*PER_ITER
+            dut._log.info("RESET ticks = {} of {} {:3d}%".format(total_ticks, ticks, int((total_ticks / ticks) * 100.0)))
+    elif ticks > 0:
+        await ClockCycles(dut.clk, ticks)
+    else:
+        dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SKIPPED".format(reset_ticks))
+
+
+    # FIXME fetch out before and check ATTACHED
+    # FIXME fetch out before and check POWERED
+    # FIXME fetch out 'dut.usbdev.ctrl.ctrl_logic.main_stateReg_string' == 'ACTIVE_INIT'  011b
+
+    await ClockCycles(dut.clk, TICKS_PER_BIT)
+    
+    ##############################################################################################
+
+    await usb.send_idle()
+
+    # SYNC sequence 8'b00000001  KJKJKJKK
+    # FIXME check we can hold a random number of J-IDLE states here
+    await usb.send_0()	# LSB0
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_1()	# MSB7
+
+    # TOKEN=SETUP  PID=0010b 1101b
+    await usb.send_1()  # LSB0
+    await usb.send_0()
+    await usb.send_1()
+    await usb.send_1()
+    await usb.send_0()
+    await usb.send_1()
+    await usb.send_0()
+    await usb.send_0()  # MSB7
+
+    # ADDR=0000001b
+    await usb.send_1()  # LSB0
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()  # MSB6
+
+    # ENDP=0000b
+    await usb.send_0()  # LSB0
+    await usb.send_0()
+    await usb.send_0()
+    await usb.send_0()  # MSB3
+
+    # CRC5=11101b 0x1d
+    await usb.send_1()  # LSB0
+    await usb.send_0()
+    await usb.send_1()
+    await usb.send_1()
+    await usb.send_1()  # MSB4
+
+    # EOP  SE0 SE0 J IDLE
+    await usb.send_SE0()
+    await usb.send_SE0()
+    await usb.send_J()
+    await usb.send_idle()
+
+    # FIXME check state machine for error
 
     # Inject noise into the signals, clock/1
 
@@ -502,10 +632,23 @@ async def test_usbdev(dut):
 
     # Inject valid packet, clock/4
 
+    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
+    await ttwb.wb_dump(0xff00, 4)
+    await ttwb.wb_dump(0xff04, 4)
+    await ttwb.wb_dump(0xff08, 4)
+    await ttwb.wb_dump(0xff0c, 4)
+    await ttwb.wb_dump(0xff10, 4)
+    await ttwb.wb_dump(0xff20, 4)
 
 
-    #await ClockCycles(dut.clk, 256)
-    #await ClockCycles(dut.clk, 256)
+    await ClockCycles(dut.clk, 256)
+    await ClockCycles(dut.clk, 256)
+    await ClockCycles(dut.clk, 256)
+    await ClockCycles(dut.clk, 256)
+
+    await ClockCycles(dut.clk, 256)
+    await ClockCycles(dut.clk, 256)
+    await ClockCycles(dut.clk, 256)
     await ClockCycles(dut.clk, 256)
 
     # open rom.txt and run it
@@ -534,3 +677,99 @@ async def test_usbdev(dut):
     ##s = "" + "(%3.1fMHz)" % frequency_a
     ##dut._log.info("s={}".format(s))
 
+
+
+# NRZI - 0 = transition
+# NRZI - 1 = no transition
+# NRZI - stuff 0 after 6 111111s
+class NRZI():
+    dut = None
+    TICKS_PER_BIT = None
+    LOW_SPEED = None
+    nrzi_one_count = None
+    nrzi_last = None
+
+    DP = 0x01
+    DM = 0x02
+    MASK = DP|DM
+
+    SE0 = 0x00		# !D+ bit0 !D- bit1 = SE0
+    LS_J = DM		# !D+ bit0  D- bit1 = J   LS  IDLE
+    HS_J = DP		#  D+ bit0 !D- bit1 = J   HS  IDLE
+    LS_K = DP		#  D+ bit0 !D- bit1 = K   LS
+    HS_K = DM		# !D+ bit0  D- bit1 = K   HS
+
+    def __init__(self, dut, TICKS_PER_BIT: int, LOW_SPEED: bool = False):
+        self.dut = dut
+        assert(TICKS_PER_BIT >= 0 and type(TICKS_PER_BIT) is int)
+        self.TICKS_PER_BIT = TICKS_PER_BIT
+        self.LOW_SPEED = LOW_SPEED
+        self.reset()
+        return None
+
+    def reset(self, last: str = None) -> None:
+        self.nrzi_one_count = 0
+        self.nrzi_last = last
+
+    def nrzi(self, whoami: str):
+        assert(whoami == 'J' or whoami == 'K')
+        if(self.nrzi_last != whoami):
+            self.nrzi_one_count = 0
+        else:
+            self.nrzi_one_count += 1
+        self.nrzi_last = whoami
+        if self.nrzi_one_count >= 6:
+            if whoami == 'J':
+                self.send_K()
+            else:
+                self.send_J()
+
+    async def update(self, or_mask: int, ticks: int = None) -> int:
+        v = self.dut.uio_in.value & ~self.MASK | or_mask
+        self.dut.uio_in.value = v
+
+        if ticks is None:
+            ticks = self.TICKS_PER_BIT
+        await ClockCycles(self.dut.clk, ticks)
+
+        return v
+
+    async def send_SE0(self) -> int:
+        return await self.update(self.SE0)
+
+    async def send_J(self) -> None:
+        if self.LOW_SPEED:
+            await self.update(self.LS_J)
+        else:
+            await self.update(self.HS_J)
+        self.nrzi('J')
+
+    async def send_K(self) -> None:
+        if self.LOW_SPEED:
+            await self.update(self.LS_K)
+        else:
+            await self.update(self.HS_K)
+        self.nrzi('K')
+
+    async def send_0(self) -> None:
+        if self.nrzi_last == 'K':
+            await self.send_J()
+        elif self.nrzi_last == 'J':
+            await self.send_K()
+        else:
+            assert False, f"use send_idle() first"
+
+    async def send_1(self) -> None:
+        if self.nrzi_last == 'K':
+            await self.send_K()
+        elif self.nrzi_last == 'J':
+            await self.send_J()
+        else:
+            assert False, f"use send_idle() first"
+
+    async def send_idle(self) -> None:
+        if self.LOW_SPEED:
+            await self.update(self.LS_J)	# aka IDLE
+        else:
+            await self.update(self.HS_J)	# aka IDLE
+        self.reset('J')
