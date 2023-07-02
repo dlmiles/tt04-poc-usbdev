@@ -1787,7 +1787,6 @@ module UsbDeviceCtrl (
   wire       [0:0]    _zz_regs_interrupts_enable_1;
   wire       [13:0]   _zz_memory_external_readCmd_payload;
   wire       [13:0]   _zz_memory_external_writeCmd_payload_address;
-  wire       [31:0]   _zz_ctrl_rsp_payload_fragment_data_1;
   wire       [5:0]    _zz_memory_internal_readCmd_payload;
   wire       [3:0]    _zz_memory_internal_readCmd_payload_1;
   wire       [6:0]    _zz_desc_words_0_1;
@@ -2002,7 +2001,7 @@ module UsbDeviceCtrl (
   wire                when_BusSlaveFactory_l379_1;
   reg                 when_BusSlaveFactory_l341_7;
   wire                when_BusSlaveFactory_l347_8;
-  reg        [15:0]   _zz_ctrl_rsp_payload_fragment_data;
+  reg        [31:0]   _zz_ctrl_rsp_payload_fragment_data;
   reg        [31:0]   mapping_readBuffer;
   reg        [1:0]    mapping_readState;
   reg        [0:0]    mapping_writeState;
@@ -2086,14 +2085,17 @@ module UsbDeviceCtrl (
   reg [7:0] _zz_memory_ramsymbol_read_1;
   reg [7:0] _zz_memory_ramsymbol_read_2;
   reg [7:0] _zz_memory_ramsymbol_read_3;
-  function [15:0] zz__zz_ctrl_rsp_payload_fragment_data(input dummy);
+  function [31:0] zz__zz_ctrl_rsp_payload_fragment_data(input dummy);
     begin
       zz__zz_ctrl_rsp_payload_fragment_data[7 : 0] = 8'h06;
       zz__zz_ctrl_rsp_payload_fragment_data[11 : 8] = 4'b0000;
       zz__zz_ctrl_rsp_payload_fragment_data[15 : 12] = 4'b0001;
+      zz__zz_ctrl_rsp_payload_fragment_data[24 : 16] = 9'h01f;
+      zz__zz_ctrl_rsp_payload_fragment_data[26 : 25] = 2'b01;
+      zz__zz_ctrl_rsp_payload_fragment_data[31 : 27] = 5'h04;
     end
   endfunction
-  wire [15:0] _zz_3;
+  wire [31:0] _zz_3;
 
   assign _zz_regs_halt_hit = {3'd0, regs_halt_id};
   assign _zz_desc_words_0 = (desc_offset + 7'h01);
@@ -2111,7 +2113,6 @@ module UsbDeviceCtrl (
   assign _zz_regs_interrupts_enable_1 = 1'b0;
   assign _zz_memory_external_readCmd_payload = (io_ctrl_cmd_payload_fragment_address >>> 2'd2);
   assign _zz_memory_external_writeCmd_payload_address = (io_ctrl_cmd_payload_fragment_address >>> 2'd2);
-  assign _zz_ctrl_rsp_payload_fragment_data_1 = {16'd0, _zz_ctrl_rsp_payload_fragment_data};
   assign _zz_memory_internal_readCmd_payload = ({2'd0,_zz_memory_internal_readCmd_payload_1} <<< 2'd2);
   assign _zz_memory_internal_readCmd_payload_1 = token_endpoint;
   assign _zz_desc_words_0_2 = 3'b100;
@@ -2611,7 +2612,7 @@ module UsbDeviceCtrl (
         ctrl_rsp_payload_fragment_data[5 : 5] = regs_halt_effective;
       end
       16'hff20 : begin
-        ctrl_rsp_payload_fragment_data[31 : 0] = _zz_ctrl_rsp_payload_fragment_data_1;
+        ctrl_rsp_payload_fragment_data[31 : 0] = _zz_ctrl_rsp_payload_fragment_data;
       end
       default : begin
       end

@@ -47,6 +47,7 @@ MAX_CYCLES  = 100000
 class TT2WB():
     dut = None
     enable = False
+    ADDR_DESC = {}	## TODO
     cmds = {
         CMD_IDLE: "CMD_IDLE",
         CMD_EXEC: "CMD_EXEC",
@@ -84,6 +85,13 @@ class TT2WB():
     def restore(self):
         # restore state
         return None
+
+    def addr_desc(self, addr: int, unknown: bool = False) -> str:
+        if addr in self.ADDR_DESC:
+            return self.ADDR_DESC.get(addr)
+        if unknown:
+            return None
+        return "{:04x}".format(addr)
 
     def addr_to_bus(self, addr: int) -> int:
         return addr >> 2
@@ -128,15 +136,17 @@ class TT2WB():
             await ClockCycles(self.dut.clk, 1)
         return data
 
-    async def wait_ack(self, cycles: int = None, can_raise: bool = True) -> bool:
+    async def wb_ACK_wait(self, cycles: int = None, can_raise: bool = True) -> bool:
         if cycles is None:
             cycles = self.MAX_CYCLES
-        #print("wait_ack cycles={}".format(cycles))
+
+        #print("wb_ACK_wait cycles={}".format(cycles))
         for i in range(0, cycles):
             if extract_bit(self.dut.dut.uio_out.value, 4):
                 self.dut._log.debug("WB_ACK cycles={} {}".format(i, True))
                 return True
             await ClockCycles(self.dut.clk, 1)
+
         if can_raise:
             raise Exception(f"TT2WB no wb_ACK received after {cycles} cycles")
         return False
@@ -164,7 +174,7 @@ class TT2WB():
         await self.send(CMD_EXEC, EXE_READ)
         self.dut._log.debug("WB_READ  0x{:04x}".format(addr))
 
-        if not await self.wait_ack():
+        if not await self.wb_ACK_wait():
             return None
 
         # This is a pipelined sequential read
@@ -198,15 +208,17 @@ class TT2WB():
 
         if d0.is_resolvable and d1.is_resolvable and d2.is_resolvable and d3.is_resolvable:
             data = (d3 << 24) | (d2 << 16) | (d1 << 8) | d0
-            self.dut._log.info("WB_READ  0x{:04x} = 0x{:08x}  b{} {} {} {}".format(addr, data, d3, d2, d1, d0))
+            self.dut._log.info("WB_READ  @{} = 0x{:08x}  b{} {} {} {}".format(self.addr_desc(addr), data, d3, d2, d1, d0))
             return data
-        self.dut._log.info("WB_READ  0x{:04x} = b{} {} {} {}  NOT-RESOLVABLE".format(addr, d3, d2, d1, d0))
+
+        self.dut._log.info("WB_READ  @{} = b{} {} {} {}  NOT-RESOLVABLE".format(self.addr_desc(addr), d3, d2, d1, d0))
         return None
 
 
     async def exe_write(self, addr: int, data: int) -> bool:
         self.check_enable()
         addr = self.check_address(addr)
+
         await self.send(CMD_AD0, self.addr_to_bus(addr & 0xff))
         await self.send(CMD_AD1, self.addr_to_bus((addr >> 8) & 0xff))
         d = data
@@ -214,18 +226,28 @@ class TT2WB():
             await self.send(CMD_DO0, d & 0xff)
             d = d >> 8
         await self.send(CMD_EXEC, EXE_WRITE)
-        self.dut._log.debug("WB_WRITE 0x{:04x}".format(addr))
+        self.dut._log.debug("WB_WRITE {}", self.addr_desc(addr))
 
-        if not await self.wait_ack():
-            return False
+        ack = await self.wb_ACK_wait()
 
-        self.dut._log.info("WB_WRITE 0x{:04x} = 0x{:08x}".format(addr, data))
-        return True
+        ackstr = '' if(ack is True) else 'NO-WB-ACK'
+        self.dut._log.info("WB_WRITE @{} = 0x{:08x} {}".format(self.addr_desc(addr), data, ackstr))
+        return ack
+
+
+    async def wb_read_BinaryValue(self, addr: int) -> tuple:
+        return await self.exe_read_BinaryValue(addr)
+
+    async def wb_read(self, addr: int) -> int:
+        return await self.exe_read(addr)
+
+    async def wb_write(self, addr: int, data: int) -> bool:
+        return await self.exe_write(addr, data)
 
     async def wb_dump(self, addr: int, count: int) -> int:
         self.check_enable()
         addr = self.check_address(addr)
-        assert count % 4 == 0, f"count = $count not aligned to modulus 4"
+        assert count % 4 == 0, f"count = {count} not aligned to modulus 4"
         offset = 0
         left = count
         while left > 0:
@@ -235,8 +257,8 @@ class TT2WB():
             s2 = chr(d2) if(d2.is_resolvable and chr(d2.integer).isprintable()) else '.'
             s3 = chr(d3) if(d3.is_resolvable and chr(d3.integer).isprintable()) else '.'
             data = "0x{:08x}".format(d32.integer) if(d32.is_resolvable) else '0x????????'
-            offstr = "@+0x{:04x}".format(offset) if(addr != offset) else ''
-            self.dut._log.info("WB_DUMP  0x{:04x}{} = {}  b{} {} {} {}  {}  {}{}{}{}".format(addr, offstr, data, d3, d2, d1, d0, d32, s0, s1, s2, s3))
+            offstr = "+0x{:04x}".format(offset) if(addr != offset) else ''
+            self.dut._log.info("WB_DUMP  @{}{} = {}  b{} {} {} {}  {}  {}{}{}{}".format(self.addr_desc(addr), offstr, data, d3, d2, d1, d0, d32, s0, s1, s2, s3))
             left -= 4
             addr += 4
             offset += 4

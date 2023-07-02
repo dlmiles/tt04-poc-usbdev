@@ -12,7 +12,7 @@ from cocotb.triggers import RisingEdge, FallingEdge, Timer, ClockCycles
 from cocotb.wavedrom import trace
 from cocotb.binary import BinaryValue
 
-from test_setup import REG_FRAME
+from test_setup import USBDEV, REG_FRAME
 from test_tt2wb import TT2WB, extract_bit
 import RomReader
 
@@ -435,11 +435,36 @@ async def test_usbdev(dut):
         d = ((i+3) << 24) | ((i+2) << 16) | ((i+1) << 8) | (i)
         await ttwb.exe_write(a, d)
 
+    end_of_buffer = -1
+    for a in range(0, 64, 4):
+        i = a & 0xff
+        expect = ((i+3) << 24) | ((i+2) << 16) | ((i+1) << 8) | (i)
+        d = await ttwb.exe_read_BinaryValue(a)
+        if d[0].is_resolvable:
+            assert d[0] == expect, f"read at {a} expected {expect} got {d[0]}"
+        else:
+            end_of_buffer = a
+    dut._log.info("END_OF_BUFFER = 0x{:04x} {}d".format(end_of_buffer, end_of_buffer))
+
+
     await ttwb.wb_dump(0x0000, 64)
 
     await ttwb.wb_dump(REG_FRAME, 0x30)
 
+
+    for a in range(0, 64, 4):	# zero out memory buffer
+        await ttwb.exe_write(a, 0x00000000)
+
+    await ttwb.wb_dump(0x0000, 64)
+
     report_resolvable(dut, depth=depth, filter=exclude_re_path)
+
+    await ClockCycles(dut.clk, 256)
+
+    usbdev = USBDEV(dut, ttwb)
+
+    await usbdev.setup()
+
 
     # Perform reset sequence
     #reset_seq = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00]

@@ -33,7 +33,7 @@ BUF_DATA1 = 0x0024
 BUF_DATA2 = 0x0028
 BUF_DATA3 = 0x002c
 
-BUF_END = 0x0030
+BUF_END = 0x003c
 
 ADDR_DESC = {
     REG_FRAME: "REG_FRAME",
@@ -57,70 +57,6 @@ ADDR_DESC = {
 }
 
 
-def addr_desc(addr: int, unknown: bool = False) -> str:
-    if addr in ADDR_DESC:
-        return ADDR_DESC.get(addr)
-    if unknown:
-        return None
-    return "%04x".format(addr)
-
-
-async def wb_wait_ACK(dut) -> bool:
-    max_iter = 5000
-    while dut.dut.wb_ACK.value == 0 and max_iter > 0:
-        max_iter -= 1
-        await ClockCycle(dut.clk, 1)
-    if max_iter <= 0:
-        raise Exception()
-    return dut.dut.wb_ACK.value == 1
-
-
-async def wb_write(dut, addr: int, value: int) -> None:
-    assert addr % 4 == 0, f"addr = $addr not aligned to modulus 4"
-    dut.wb_CYC.value = 1
-    dut.wb_STB.value = 1
-    dut.wb_WE.value = 1
-    dut.wb_SEL.value = 0xf	# 4 bits (32bit write)
-    dut.wb_ADR.value = addr
-    dut.wb_DAT_MOSI.value = value
-
-    dut._log.info("%s(0x%04x) = 0x%08x WRITE", addr_desc(addr), addr, data)
-
-    await wb_wait_ACK(dut)
-
-    dut.wb_STB.value = 0
-    dut.wb_WE.value = 0
-    dut.wb_SEL.value = 0
-    await ClockCycle(dut.clk, 1)
-
-
-async def wb_read(dut, addr: int) -> int:
-    assert addr % 4 == 0, f"addr = $addr not aligned to modulus 4"
-    dut.wb_CYC.value = 1
-    dut.wb_STB.value = 1
-    dut.wb_WE.value = 0
-    dut.wb_SEL.value = 0x0
-    dut.wb_ADR.value = addr
-
-    # FIXME async this with timeout/iteration limit
-    while dut.dut.wb_ACK.value == 0:
-        await ClockCycle(dut.clk, 1)
-
-    retval = dut.wb_DAT_MISO.value
-    dut.wb_STB.value = 0
-    await ClockCycle(dut.clk, 1)
-    dut._log.info("%s(0x%04x) = 0x%08x READ", addr_desc(addr), addr, data)
-    return retval
-
-
-async def wb_dump(dut, addr: int, count: int) -> None:
-    assert addr % 4 == 0, f"addr = $addr not aligned to modulus 4"
-    assert count % 4 == 0, f"count = $count not aligned to modulus 4"
-    while count > 0:
-        wb_read(dut, addr)
-        count -= 4
-        addr += 4
-
 
 def build_endp(
         enable: bool = False,
@@ -140,11 +76,11 @@ def build_endp(
         val |= 0x00004	# bit2
     if data_phase:
         val |= 0x00008	# bit3
-    assert head & ~0xfff == 0, f"head out of range $head"
+    assert head & ~0xfff == 0, f"head out of range {head}"
     val |= (head & 0xfff) << 4	# bit4..15 (12bits)
     if isochronous:
         val |= 0x10000   # bit16
-    assert max_packet_size & ~0x3ff == 0, f"max_packet_size out of range $max_packet_size"
+    assert max_packet_size & ~0x3ff == 0, f"max_packet_size out of range {max_packet_size}"
     val |= (max_packet_size & 0x3ff) << 22 # bit22..31 (10bits)
     return val
 
@@ -152,14 +88,14 @@ def build_endp(
 def build_interrupt(
         endp: int = -1,
         reset: bool = False,
-        ep0Setup: bool = False,
+        ep0setup: bool = False,
         suspend: bool = False,
         resume: bool = False,
         disconnect: bool = False,
         all: bool = False
     ) -> int:
     val = 0
-    assert endp == -1 or (endp >= 0 and endp <= 15), f"endp is invalid $endp"
+    assert endp == -1 or (endp >= 0 and endp <= 15), f"endp is invalid {endp}"
     if endp >= 0:
         val |= 1 << endp
     if reset:
@@ -183,7 +119,7 @@ def build_halt(
         effective_enable: bool = False
     ) -> int:
     val = 0
-    assert endp & ~0xf == 0, f"endp is $endp and not a modulus of 4"
+    assert endp & ~0xf == 0, f"endp is {endp} and not a modulus of 4"
     val |= endp
     if enable:
         val |= 0x0010
@@ -233,63 +169,81 @@ def dump_reg_halt(value: int) -> str:
     return s
 
 
-def setup(dut):
-    # role call on registers
-    data = wb_read(dut, REG_FRAME)
+class USBDEV():
+    dut = None
+    bus = None
 
-    data = wb_read(dut, REG_ADDRESS)
-
-    data = wb_read(dut, REG_INTERRUPT)
-
-    data = wb_read(dut, REG_HALT)
-
-    data = wb_read(dut, REG_CONFIG)
-
-    data = wb_read(dut, REG_INFO)
-
-
-    wb_dump(dut, BUF_EP0, BUF_END)
-
-
-    # ENDPOINT#0
-    wb_write(dut, REG_HALT, build_halt(endp=0)) # HALT EP=0
-
-    # Not needed but we do it to peek at state
-    data = wb_read(dut, REG_HALT)
-
-    wb_write(dut, BUF_EP0, build_endp(enable=True)) #
-
-    wb_write(dut, REG_HALT, build_halt(endp=0, enable=True)) # HALT EP=0 (unhalt)
-
-
-    # ENDPOINT#1
-    wb_write(dut, REG_HALT, build_halt(endp=1)) # HALT EP=1
-
-    # Not needed but we do it to peek at state
-    data = wb_read(dut, REG_HALT)
-
-    wb_write(dut, BUF_EP1, build_endp(enable=True)) #
-
-    wb_write(dut, REG_HALT, build_halt(endp=1, enable=True)) # HALT EP=1 (unhalt)
-
-
-    # CLEAR INTERRUPTS
-    wb_write(dut, REG_INTERRUPTS, build_interrupt(all=True))
-
-
-    # ENABLE INTERRUPTS
-    wb_write(dut, REG_CONFIG, build_config(interrupt_enable_set=True))
-
-
-
-async def wait_for_interrupt(dut) -> int:
-    while dut.interrupt.value == 0:
-        await ClockCycle(dut.clk, 1)
-
-    if dut.interrupt.value == 0:
+    def __init__(self, dut, bus):
+        assert(dut is not None)
+        assert(bus is not None)
+        self.dut = dut
+        self.bus = bus
         return None
 
-    value = wb_read(dut, REG_INTERRUPT)
-    dump_reg_interrupt(dut, value)
 
-    return value
+    async def setup(self) -> None:
+        # role call on registers
+        data = await self.bus.wb_read(REG_FRAME)
+
+        data = await self.bus.wb_read(REG_ADDRESS)
+
+        data = await self.bus.wb_read(REG_INTERRUPT)
+
+        data = await self.bus.wb_read(REG_HALT)
+
+        data = await self.bus.wb_read(REG_CONFIG)
+
+        data = await self.bus.wb_read(REG_INFO)
+
+
+        await self.bus.wb_dump(BUF_EP0, BUF_END)
+
+
+        # ENDPOINT#0
+        await self.bus.wb_write(REG_HALT, build_halt(endp=0)) # HALT EP=0
+
+        # Not needed but we do it to peek at state
+        data = await self.bus.wb_read(REG_HALT)
+
+        await self.bus.wb_write(BUF_EP0, build_endp(enable=True)) #
+
+        await self.bus.wb_write(REG_HALT, build_halt(endp=0, enable=True)) # HALT EP=0 (unhalt)
+
+
+        # ENDPOINT#1
+        await self.bus.wb_write(REG_HALT, build_halt(endp=1)) # HALT EP=1
+
+        # Not needed but we do it to peek at state
+        data = await self.bus.wb_read(REG_HALT)
+
+        await self.bus.wb_write(BUF_EP1, build_endp(enable=True)) #
+
+        await self.bus.wb_write(REG_HALT, build_halt(endp=1, enable=True)) # HALT EP=1 (unhalt)
+
+
+        # CLEAR INTERRUPTS
+        await self.bus.wb_write(REG_INTERRUPT, build_interrupt(all=True))
+
+
+        # ENABLE INTERRUPTS
+        await self.bus.wb_write(REG_CONFIG, build_config(interrupt_enable_set=True))
+
+
+
+    async def wait_for_interrupt(self, cycles: int = None) -> int:
+        if cycles is None:
+            cycles = 1000000
+
+        for i in range(0, cycles):
+            while self.dut.interrupt.value == 0:
+                await ClockCycle(self.dut.clk, 1)
+
+        if self.dut.interrupt.value == 0:
+            return None
+
+        value = await self.bus.wb_read(REG_INTERRUPT)
+        s = dump_reg_interrupt(value)
+        self.dut._log.info("{}".format(s))
+
+        return value
+
