@@ -4141,7 +4141,7 @@ module UsbDeviceCtrl (
 
   assign when_UsbDataRxFsm_l73 = (! io_phy_rx_active);
   assign when_UsbDataRxFsm_l80 = (! io_phy_rx_active);
-  assign when_UsbDataRxFsm_l81 = ((! (&dataRx_valids)) || (dataRx_crc16_io_result != 16'h800d));
+  assign when_UsbDataRxFsm_l81 = (((! (&dataRx_valids)) || (dataRx_crc16_io_result != 16'h800d)) || dataRx_crc16rx_io_crcError);
   assign when_UsbDataRxFsm_l90 = (&dataRx_valids);
   assign when_StateMachine_l253 = ((! (dataRx_stateReg == dataRx_enumDef_IDLE)) && (dataRx_stateNext == dataRx_enumDef_IDLE));
   assign when_UsbDataRxFsm_l98 = (! (dataRx_stateReg == dataRx_enumDef_BOOT));
