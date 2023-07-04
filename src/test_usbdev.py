@@ -149,7 +149,7 @@ def monitor(dut, path: str, prefix: str = None) -> None:
             # Convert to string
             return v.buff.decode('ascii').rstrip()
         else:
-            return str(v.value).rstrip()
+            return str(v.value)
 
     signal = design_element(dut, path)
     if signal is None:
@@ -165,7 +165,7 @@ def monitor(dut, path: str, prefix: str = None) -> None:
         yield ClockCycles(dut.clk, 1)
         new_value = signal.value
         if new_value != value:
-            s = printable(value)
+            s = printable(new_value)
             dut._log.info("monitor({}) = {}".format(pfx, s))
             value = new_value
 
@@ -351,11 +351,9 @@ async def test_usbdev(dut):
 
     await ClockCycles(dut.clk, 256)
 
+    # Start these now as they will fire during USB interface RESET sequence
+    # Defered the other FSM monitors setup due to significant simulation slowdown
     await cocotb.start(monitor(dut, 'dut.usbdev.interrupts',                               'interrupts'))
-    await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.phy_logic.rx_packet_stateReg_string', 'rx_packet'))
-    await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.phy_logic.tx_frame_stateReg_string',  'tx_frame'))
-    await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.active_stateReg_string',   'active'))
-    await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.token_stateReg_string',    'token'))
     await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.main_stateReg_string',     'main'))
 
     debug(dut, '001_WISHBONE')
@@ -537,6 +535,14 @@ async def test_usbdev(dut):
     #     need to understand the 3-K-J chirp rule, if that is the chirp sequence repeats without timeframes
 
     await ClockCycles(dut.clk, TICKS_PER_BIT)
+
+    ##############################################################################################
+
+    # These were defered so speed up the RESET simulation part
+    await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.phy_logic.rx_packet_stateReg_string', 'rx_packet'))
+    await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.phy_logic.tx_frame_stateReg_string',  'tx_frame'))
+    await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.active_stateReg_string',   'active'))
+    await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.token_stateReg_string',    'token'))
     
     ##############################################################################################
 
