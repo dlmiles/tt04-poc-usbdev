@@ -10,9 +10,11 @@
  *
  * This will leave only 4 bits uio_xxx[3:0] unallocated.
  *
- * uio_out[7:5] = CMD input bits
- * uio_out[4]   = valid output bits (signal the bus transction completed)
  * uio_out[3:0] = unused, free for project use
+ * uio_out[4]   = OUTPUT valid output bits (signal the bus transction completed)
+ * uio_out[7:5] = INPUT  CMD input bits
+ * ui_in[7:0]   = INPUT  all in use
+ * uo_out[7:0]  = OUTPUT all in use
  *
  */
 module tt04_to_wishbone (
@@ -34,12 +36,14 @@ module tt04_to_wishbone (
     output			wb_WE,
     /* wb_ADR - MSB 14-bits of 16-bits byte-address as we only support 32bit
      *          aligned access with the bottom 2 bits implicitly zero and
-     *          is not represented in the width here. */
+     *          is not represented in the width here.
+     */
     output		[13:0]  wb_ADR,
     input		[31:0]  wb_DAT_MISO,
     output		[31:0]  wb_DAT_MOSI,
-    /* wb_SEL - We only support 32-bit aligned access so this byte-wide write-mask
-     *          is connected to wb_WE. */
+    /* wb_SEL - We only support 32-bit aligned access.
+     *          Use EXE_WBSEL to control this byte-write-mask.
+     */
     output		[3:0]   wb_SEL
 );
 
@@ -59,6 +63,7 @@ module tt04_to_wishbone (
     reg [13:0] ADR;
     reg [31:0] DO;
     reg [31:0] DI;
+    reg [3:0] SEL;
     reg CYC;
     reg STB;	// aka bus active
     reg WE;
@@ -66,7 +71,7 @@ module tt04_to_wishbone (
 `ifndef SYNTHESIS
     // This exists only to allow easier debugging of wave
     wire [15:0] ADR_debug;
-    assign ADR_debug = {ADR << 2,2'b00};
+    assign ADR_debug = {ADR[13:0],2'b00};
 `endif
 
     wire [2:0] cmd;
@@ -108,12 +113,14 @@ module tt04_to_wishbone (
     wire do_di3;
     assign do_di3 = cmd == CMD_DI3;
 
+    wire [2:0] in8_exe;
+    assign in8_exe = in8[2:0];
     wire exe_reset;
-    assign exe_reset = do_exec && in8 == EXE_RESET;
+    assign exe_reset = do_exec && in8_exe == EXE_RESET;
     wire exe_read;
-    assign exe_read = do_exec && in8 == EXE_READ;
+    assign exe_read = do_exec && in8_exe == EXE_READ;
     wire exe_write;
-    assign exe_write = do_exec && in8 == EXE_WRITE;
+    assign exe_write = do_exec && in8_exe == EXE_WRITE;
 
     wire reset;
     assign reset = !rst_n || exe_reset;
@@ -128,12 +135,12 @@ module tt04_to_wishbone (
         end
     end
 
-    // We want a matrix of cmd/last_cmd
-    localparam EXE_RESET   = 8'h01;
-    localparam EXE_DISABLE = 8'h04;
-    localparam EXE_ENABLE  = 8'h05;
-    localparam EXE_READ    = 8'h06;
-    localparam EXE_WRITE   = 8'h07;
+    localparam EXE_RESET   = 3'h1;
+    localparam EXE_WBSEL   = 3'h2;  // needs better testing
+    localparam EXE_DISABLE = 3'h4;
+    localparam EXE_ENABLE  = 3'h5;
+    localparam EXE_READ    = 3'h6;
+    localparam EXE_WRITE   = 3'h7;
 
     always @(posedge clk) begin
         if (reset) begin
@@ -141,10 +148,14 @@ module tt04_to_wishbone (
             WE <= 0;
             CYC <= 0;
             STB <= 0;
+            SEL <= 4'b1111;
             issue <= 0;
         end else if (do_exec) begin
-            case (in8)
+            case (in8_exe)
             EXE_RESET  : begin	// use exe_reset
+            end
+            EXE_WBSEL  : begin
+                SEL <= in8[7:4];
             end
             EXE_ENABLE  : begin
                 CYC <= 1;
@@ -174,7 +185,8 @@ module tt04_to_wishbone (
         end else if (!do_idle) begin
             issue <= 0;
         end
-        if (wb_ACK) begin
+        // We'll add STB here just in case a bad WB module flashes wb_ACK at us
+        if (STB && wb_ACK) begin
             WE <= 0;
             DI <= wb_DAT_MISO;
             STB <= 0;
@@ -282,6 +294,7 @@ module tt04_to_wishbone (
         if (reset) begin
             // NOOP
             // Lets see if yosys can see drivers of 'pos' are mutually exclusive states
+            //  no it couldn't :( so we reworked the file instead.  See pos_next/pos.
         end else if (do_di0) begin
             if (cmd_last == CMD_DI0) begin
                 if (pos == 2'd0)
@@ -321,7 +334,7 @@ module tt04_to_wishbone (
     assign wb_CYC = CYC;
     assign wb_STB = STB;
     assign wb_WE = WE;
-    assign wb_SEL[3:0] = {WE,WE,WE,WE};
+    assign wb_SEL[3:0] = WE ? SEL : 4'b0000;
     assign wb_ADR[13:0] = ADR;
     assign wb_DAT_MOSI[31:0] = DO;
 
