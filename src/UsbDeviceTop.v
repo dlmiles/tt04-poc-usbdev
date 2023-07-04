@@ -2021,10 +2021,10 @@ module UsbDeviceCtrl (
   reg        [1:0]    dataRx_stateNext;
   wire                when_UsbDataRxFsm_l80;
   wire                when_UsbDataRxFsm_l89;
-  wire                when_UsbDataRxFsm_l92;
-  wire                when_UsbDataRxFsm_l104;
+  wire                when_UsbDataRxFsm_l95;
+  wire                when_UsbDataRxFsm_l107;
   wire                when_StateMachine_l253;
-  wire                when_UsbDataRxFsm_l111;
+  wire                when_UsbDataRxFsm_l114;
   reg        [2:0]    dataTx_stateReg;
   reg        [2:0]    dataTx_stateNext;
   reg        [2:0]    token_stateReg;
@@ -3318,7 +3318,7 @@ module UsbDeviceCtrl (
       dataRx_enumDef_DATA : begin
         if(!when_UsbDataRxFsm_l89) begin
           if(io_phy_rx_flow_valid) begin
-            if(when_UsbDataRxFsm_l104) begin
+            if(when_UsbDataRxFsm_l107) begin
               dataRx_data_valid = 1'b1;
             end
           end
@@ -4103,10 +4103,10 @@ module UsbDeviceCtrl (
 
   assign when_UsbDataRxFsm_l80 = (! io_phy_rx_active);
   assign when_UsbDataRxFsm_l89 = (! io_phy_rx_active);
-  assign when_UsbDataRxFsm_l92 = ((! (&dataRx_valids)) || (! (! dataRx_crc16rx_io_crcError)));
-  assign when_UsbDataRxFsm_l104 = (&dataRx_valids);
+  assign when_UsbDataRxFsm_l95 = ((&dataRx_valids) && (! dataRx_crc16rx_io_crcError));
+  assign when_UsbDataRxFsm_l107 = (&dataRx_valids);
   assign when_StateMachine_l253 = ((! (dataRx_stateReg == dataRx_enumDef_IDLE)) && (dataRx_stateNext == dataRx_enumDef_IDLE));
-  assign when_UsbDataRxFsm_l111 = (! (dataRx_stateReg == dataRx_enumDef_BOOT));
+  assign when_UsbDataRxFsm_l114 = (! (dataRx_stateReg == dataRx_enumDef_BOOT));
   always @(*) begin
     dataTx_stateNext = dataTx_stateReg;
     case(dataTx_stateReg)
@@ -4809,8 +4809,8 @@ module UsbDeviceCtrl (
       end
       dataRx_enumDef_DATA : begin
         if(when_UsbDataRxFsm_l89) begin
-          if(when_UsbDataRxFsm_l92) begin
-            dataRx_crcError <= 1'b1;
+          if(when_UsbDataRxFsm_l95) begin
+            dataRx_crcError <= 1'b0;
           end
         end else begin
           if(io_phy_rx_flow_valid) begin
@@ -4825,9 +4825,9 @@ module UsbDeviceCtrl (
       dataRx_notResponding <= 1'b0;
       dataRx_stuffingError <= 1'b0;
       dataRx_pidError <= 1'b0;
-      dataRx_crcError <= 1'b0;
+      dataRx_crcError <= 1'b1;
     end
-    if(when_UsbDataRxFsm_l111) begin
+    if(when_UsbDataRxFsm_l114) begin
       if(io_phy_rx_flow_valid) begin
         if(io_phy_rx_stuffingError) begin
           dataRx_stuffingError <= 1'b1;
