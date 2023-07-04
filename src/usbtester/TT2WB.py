@@ -24,6 +24,7 @@ CMD_DI0    = 0xc0
 CMD_DI3    = 0xe0
 
 EXE_RESET   = 0x01
+EXE_WBSEL   = 0x02
 EXE_DISABLE = 0x04
 EXE_ENABLE  = 0x05
 EXE_READ    = 0x06
@@ -38,7 +39,11 @@ MAX_CYCLES  = 100000
 class TT2WB():
     dut = None
     enable = False
-    ADDR_DESC = {}	## TODO
+    ADDR_DESC = {
+        # Here you can create a dict name for address location to help diagnostics in logs
+        # There is also the 'format' Callable mechanism
+        #0x0000: "ADDR0000"
+    }
     cmds = {
         CMD_IDLE: "CMD_IDLE",
         CMD_EXEC: "CMD_EXEC",
@@ -51,6 +56,7 @@ class TT2WB():
     }
     exes = {
         EXE_RESET: "EXE_RESET",
+        EXE_WBSEL: "EXE_WBSEL",
         EXE_DISABLE: "EXE_DISABLE",
         EXE_ENABLE: "EXE_ENABLE",
         EXE_READ: "EXE_READ",
@@ -152,6 +158,11 @@ class TT2WB():
         await self.send(CMD_EXEC, EXE_RESET)
         self.enable = False
 
+    async def exe_wbsel(self, sel: int = 0xf) -> None:
+        assert sel & ~0xf == 0, f"sel = 0x{sel:x} is not inside valid 4-bit range"
+        await self.send(CMD_EXEC, (sel << 4) | EXE_WBSEL)
+        self.enable = False
+
     async def exe_enable(self) -> None:
         await self.send(CMD_EXEC, EXE_ENABLE)
         self.enable = True
@@ -163,7 +174,7 @@ class TT2WB():
     async def exe_read_BinaryValue(self, addr: int) -> tuple:
         self.check_enable()
         addr = self.check_address(addr)
-        await self.send(CMD_AD0, self.addr_to_bus(addr) & 0xff)	## FIXME BUS_MASK
+        await self.send(CMD_AD0, self.addr_to_bus(addr) & 0xff)
         await self.send(CMD_AD1, (self.addr_to_bus(addr) >> 8) & 0xff)
         await self.send(CMD_EXEC, EXE_READ)
         self.dut._log.debug("WB_READ  0x{:04x}".format(addr))
@@ -173,10 +184,9 @@ class TT2WB():
 
         # This is a pipelined sequential read
         # FIXME make this API look more obvious?
-        # This is not obvious but d0 is exposed by default
-        # But if we ask for the LSB end after a EXE_READ we get d1 next (not d0)
+        # This is not obvious but d0 is exposed by default (so we can read it immediately)
+        # But if we ask for the LSB end after the EXE_READ we get d1 next (not d0)
         d0 = await self.recv(CMD_DI0, pipeline=True)
-        #d0 = await self.recv(CMD_DI0, pipeline=True)
         d1 = await self.recv(CMD_DI0, pipeline=True)
         d2 = await self.recv(CMD_DI0, pipeline=True)
         d3 = await self.recv(CMD_IDLE, pipeline=True)
