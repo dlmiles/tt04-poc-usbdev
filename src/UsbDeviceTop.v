@@ -1979,7 +1979,7 @@ module UsbDeviceCtrl (
   reg        [3:0]    active_handshakePid;
   reg                 active_completion;
   reg                 active_noUpdate;
-  wire                when_UsbDeviceCtrl_l435;
+  wire                when_UsbDeviceCtrl_l440;
   reg        [1:0]    active_byteSel;
   reg                 active_dataRxOverrun;
   wire                main_wantExit;
@@ -2041,35 +2041,36 @@ module UsbDeviceCtrl (
   wire                when_UsbTokenRxFsm_l107;
   reg        [4:0]    active_stateReg;
   reg        [4:0]    active_stateNext;
-  wire                when_UsbDeviceCtrl_l451;
-  wire                when_UsbDeviceCtrl_l460;
-  wire                when_UsbDeviceCtrl_l462;
-  wire                when_UsbDeviceCtrl_l484;
-  wire                when_UsbDeviceCtrl_l487;
-  wire                when_UsbDeviceCtrl_l502;
-  wire                when_UsbDeviceCtrl_l557;
-  wire                when_UsbDeviceCtrl_l635;
-  wire                when_UsbDeviceCtrl_l648;
-  wire                when_UsbDeviceCtrl_l651;
-  wire                when_UsbDeviceCtrl_l654;
-  wire                when_UsbDeviceCtrl_l657;
-  wire                when_UsbDeviceCtrl_l576;
-  wire                when_UsbDeviceCtrl_l606;
-  wire                when_UsbDeviceCtrl_l608;
+  wire                when_UsbDeviceCtrl_l456;
+  wire                when_UsbDeviceCtrl_l465;
+  wire                when_UsbDeviceCtrl_l468;
+  wire                when_UsbDeviceCtrl_l470;
+  wire                when_UsbDeviceCtrl_l495;
+  wire                when_UsbDeviceCtrl_l498;
+  wire                when_UsbDeviceCtrl_l513;
+  wire                when_UsbDeviceCtrl_l568;
+  wire                when_UsbDeviceCtrl_l646;
+  wire                when_UsbDeviceCtrl_l659;
+  wire                when_UsbDeviceCtrl_l662;
+  wire                when_UsbDeviceCtrl_l665;
+  wire                when_UsbDeviceCtrl_l668;
+  wire                when_UsbDeviceCtrl_l587;
+  wire                when_UsbDeviceCtrl_l617;
+  wire                when_UsbDeviceCtrl_l619;
   reg                 io_phy_rx_active_regNext;
-  wire                when_UsbDeviceCtrl_l614;
-  wire                when_UsbDeviceCtrl_l620;
-  wire                when_UsbDeviceCtrl_l688;
-  wire                when_UsbDeviceCtrl_l689;
-  wire                when_UsbDeviceCtrl_l738;
-  wire                when_UsbDeviceCtrl_l739;
-  wire                when_UsbDeviceCtrl_l744;
+  wire                when_UsbDeviceCtrl_l625;
+  wire                when_UsbDeviceCtrl_l631;
+  wire                when_UsbDeviceCtrl_l699;
+  wire                when_UsbDeviceCtrl_l700;
+  wire                when_UsbDeviceCtrl_l749;
+  wire                when_UsbDeviceCtrl_l750;
+  wire                when_UsbDeviceCtrl_l755;
   wire                when_StateMachine_l253_1;
   wire                when_StateMachine_l253_2;
   wire                when_StateMachine_l253_3;
   reg        [2:0]    main_stateReg;
   reg        [2:0]    main_stateNext;
-  wire                when_UsbDeviceCtrl_l773;
+  wire                when_UsbDeviceCtrl_l784;
   wire                when_StateMachine_l253_4;
   wire                when_StateMachine_l253_5;
   `ifndef SYNTHESIS
@@ -2652,13 +2653,15 @@ module UsbDeviceCtrl (
       active_enumDef_TOKEN : begin
       end
       active_enumDef_ADDRESS_HIT : begin
-        if(!when_UsbDeviceCtrl_l451) begin
+        if(!when_UsbDeviceCtrl_l456) begin
           case(token_pid)
             4'b0101 : begin
             end
             4'b1101, 4'b0001, 4'b1001 : begin
-              if(when_UsbDeviceCtrl_l460) begin
-                memory_internal_readCmd_valid = 1'b1;
+              if(when_UsbDeviceCtrl_l465) begin
+                if(when_UsbDeviceCtrl_l468) begin
+                  memory_internal_readCmd_valid = 1'b1;
+                end
               end
             end
             default : begin
@@ -2690,7 +2693,7 @@ module UsbDeviceCtrl (
       active_enumDef_HANDSHAKE_TX_1 : begin
       end
       active_enumDef_DATA_TX_0 : begin
-        if(when_UsbDeviceCtrl_l576) begin
+        if(when_UsbDeviceCtrl_l587) begin
           if(dataTx_input_ready) begin
             memory_internal_readCmd_valid = 1'b1;
           end
@@ -2722,13 +2725,15 @@ module UsbDeviceCtrl (
       active_enumDef_TOKEN : begin
       end
       active_enumDef_ADDRESS_HIT : begin
-        if(!when_UsbDeviceCtrl_l451) begin
+        if(!when_UsbDeviceCtrl_l456) begin
           case(token_pid)
             4'b0101 : begin
             end
             4'b1101, 4'b0001, 4'b1001 : begin
-              if(when_UsbDeviceCtrl_l460) begin
-                memory_internal_readCmd_payload = (_zz_memory_internal_readCmd_payload >>> 2'd2);
+              if(when_UsbDeviceCtrl_l465) begin
+                if(when_UsbDeviceCtrl_l468) begin
+                  memory_internal_readCmd_payload = (_zz_memory_internal_readCmd_payload >>> 2'd2);
+                end
               end
             end
             default : begin
@@ -2760,7 +2765,7 @@ module UsbDeviceCtrl (
       active_enumDef_HANDSHAKE_TX_1 : begin
       end
       active_enumDef_DATA_TX_0 : begin
-        if(when_UsbDeviceCtrl_l576) begin
+        if(when_UsbDeviceCtrl_l587) begin
           if(dataTx_input_ready) begin
             memory_internal_readCmd_payload = (desc_currentByte >>> 2'd2);
           end
@@ -2951,7 +2956,7 @@ module UsbDeviceCtrl (
           if(desc_data1OnCompletion) begin
             memory_internal_writeCmd_payload_data[3] = 1'b1;
           end
-          if(when_UsbDeviceCtrl_l744) begin
+          if(when_UsbDeviceCtrl_l755) begin
             memory_internal_writeCmd_payload_data[15 : 4] = 12'h000;
           end
         end
@@ -3221,14 +3226,16 @@ module UsbDeviceCtrl (
       active_enumDef_TOKEN : begin
       end
       active_enumDef_ADDRESS_HIT : begin
-        if(!when_UsbDeviceCtrl_l451) begin
+        if(!when_UsbDeviceCtrl_l456) begin
           case(token_pid)
             4'b0101 : begin
             end
             4'b1101, 4'b0001, 4'b1001 : begin
-              if(when_UsbDeviceCtrl_l460) begin
-                if(when_UsbDeviceCtrl_l462) begin
-                  dataRx_wantStart = 1'b1;
+              if(when_UsbDeviceCtrl_l465) begin
+                if(when_UsbDeviceCtrl_l468) begin
+                  if(when_UsbDeviceCtrl_l470) begin
+                    dataRx_wantStart = 1'b1;
+                  end
                 end
               end
             end
@@ -3496,7 +3503,7 @@ module UsbDeviceCtrl (
           4'b0001 : begin
           end
           4'b1001 : begin
-            if(!when_UsbDeviceCtrl_l557) begin
+            if(!when_UsbDeviceCtrl_l568) begin
               if(desc_full) begin
                 dataTx_startNull = 1'b1;
               end
@@ -3741,7 +3748,7 @@ module UsbDeviceCtrl (
       end
       active_enumDef_DATA_RX : begin
         if(dataRx_data_valid) begin
-          if(!when_UsbDeviceCtrl_l635) begin
+          if(!when_UsbDeviceCtrl_l646) begin
             desc_offsetIncrement = 1'b1;
           end
         end
@@ -3753,7 +3760,7 @@ module UsbDeviceCtrl (
       active_enumDef_HANDSHAKE_TX_1 : begin
       end
       active_enumDef_DATA_TX_0 : begin
-        if(when_UsbDeviceCtrl_l576) begin
+        if(when_UsbDeviceCtrl_l587) begin
           if(dataTx_input_ready) begin
             desc_offsetIncrement = 1'b1;
           end
@@ -3853,7 +3860,7 @@ module UsbDeviceCtrl (
       end
       active_enumDef_DATA_RX : begin
         if(dataRx_data_valid) begin
-          if(!when_UsbDeviceCtrl_l635) begin
+          if(!when_UsbDeviceCtrl_l646) begin
             byteCounter_increment = 1'b1;
           end
         end
@@ -3865,7 +3872,7 @@ module UsbDeviceCtrl (
       active_enumDef_HANDSHAKE_TX_1 : begin
       end
       active_enumDef_DATA_TX_0 : begin
-        if(when_UsbDeviceCtrl_l576) begin
+        if(when_UsbDeviceCtrl_l587) begin
           if(dataTx_input_ready) begin
             byteCounter_increment = 1'b1;
           end
@@ -3899,7 +3906,7 @@ module UsbDeviceCtrl (
   end
 
   assign active_wantKill = 1'b0;
-  assign when_UsbDeviceCtrl_l435 = ((((active_stateReg == active_enumDef_BOOT) || (active_stateReg == active_enumDef_IDLE)) || (active_stateReg == active_enumDef_TOKEN)) || (! regs_halt_hit));
+  assign when_UsbDeviceCtrl_l440 = ((((active_stateReg == active_enumDef_BOOT) || (active_stateReg == active_enumDef_IDLE)) || (active_stateReg == active_enumDef_TOKEN)) || (! regs_halt_hit));
   assign main_wantExit = 1'b0;
   always @(*) begin
     main_wantStart = 1'b0;
@@ -4266,7 +4273,7 @@ module UsbDeviceCtrl (
         end
       end
       active_enumDef_ADDRESS_HIT : begin
-        if(when_UsbDeviceCtrl_l451) begin
+        if(when_UsbDeviceCtrl_l456) begin
           active_stateNext = active_enumDef_IDLE;
         end else begin
           case(token_pid)
@@ -4274,8 +4281,12 @@ module UsbDeviceCtrl (
               active_stateNext = active_enumDef_IDLE;
             end
             4'b1101, 4'b0001, 4'b1001 : begin
-              if(when_UsbDeviceCtrl_l460) begin
-                active_stateNext = active_enumDef_EP_READ;
+              if(when_UsbDeviceCtrl_l465) begin
+                if(when_UsbDeviceCtrl_l468) begin
+                  active_stateNext = active_enumDef_EP_READ;
+                end else begin
+                  active_stateNext = active_enumDef_IDLE;
+                end
               end else begin
                 active_stateNext = active_enumDef_IDLE;
               end
@@ -4290,17 +4301,17 @@ module UsbDeviceCtrl (
         active_stateNext = active_enumDef_EP_ANALYSE;
       end
       active_enumDef_EP_ANALYSE : begin
-        if(when_UsbDeviceCtrl_l484) begin
+        if(when_UsbDeviceCtrl_l495) begin
           active_stateNext = active_enumDef_IDLE;
         end else begin
           if(token_isSetup) begin
-            if(when_UsbDeviceCtrl_l487) begin
+            if(when_UsbDeviceCtrl_l498) begin
               active_stateNext = active_enumDef_IDLE;
             end else begin
               active_stateNext = active_enumDef_DESC_ANALYSE;
             end
           end else begin
-            if(when_UsbDeviceCtrl_l502) begin
+            if(when_UsbDeviceCtrl_l513) begin
               case(token_pid)
                 4'b0001 : begin
                   active_stateNext = active_enumDef_DATA_RX;
@@ -4344,7 +4355,7 @@ module UsbDeviceCtrl (
             end
           end
           4'b1001 : begin
-            if(when_UsbDeviceCtrl_l557) begin
+            if(when_UsbDeviceCtrl_l568) begin
               active_stateNext = active_enumDef_IDLE;
             end else begin
               active_stateNext = active_enumDef_DATA_TX_0;
@@ -4361,10 +4372,10 @@ module UsbDeviceCtrl (
         end
       end
       active_enumDef_DATA_RX_ANALYSE : begin
-        if(when_UsbDeviceCtrl_l648) begin
+        if(when_UsbDeviceCtrl_l659) begin
           active_stateNext = active_enumDef_IDLE;
         end else begin
-          if(when_UsbDeviceCtrl_l654) begin
+          if(when_UsbDeviceCtrl_l665) begin
             active_stateNext = active_enumDef_IDLE;
           end else begin
             if(ep_isochronous) begin
@@ -4386,7 +4397,7 @@ module UsbDeviceCtrl (
         end
       end
       active_enumDef_DATA_TX_0 : begin
-        if(when_UsbDeviceCtrl_l576) begin
+        if(when_UsbDeviceCtrl_l587) begin
           if(dataTx_input_ready) begin
             active_stateNext = active_enumDef_DATA_TX_1;
           end
@@ -4405,22 +4416,22 @@ module UsbDeviceCtrl (
       end
       active_enumDef_HANDSHAKE_RX_0 : begin
         if(io_phy_rx_flow_valid) begin
-          if(when_UsbDeviceCtrl_l606) begin
+          if(when_UsbDeviceCtrl_l617) begin
             active_stateNext = active_enumDef_IDLE;
           end else begin
-            if(when_UsbDeviceCtrl_l608) begin
+            if(when_UsbDeviceCtrl_l619) begin
               active_stateNext = active_enumDef_IDLE;
             end else begin
               active_stateNext = active_enumDef_HANDSHAKE_RX_1;
             end
           end
         end
-        if(when_UsbDeviceCtrl_l614) begin
+        if(when_UsbDeviceCtrl_l625) begin
           active_stateNext = active_enumDef_IDLE;
         end
       end
       active_enumDef_HANDSHAKE_RX_1 : begin
-        if(when_UsbDeviceCtrl_l620) begin
+        if(when_UsbDeviceCtrl_l631) begin
           active_stateNext = active_enumDef_UPDATE_SETUP;
         end
         if(io_phy_rx_flow_valid) begin
@@ -4451,28 +4462,29 @@ module UsbDeviceCtrl (
     end
   end
 
-  assign when_UsbDeviceCtrl_l451 = (! token_ok);
-  assign when_UsbDeviceCtrl_l460 = (token_address == (regs_address_enable ? regs_address_value : 7'h00));
-  assign when_UsbDeviceCtrl_l462 = ((token_pid == 4'b1101) || (token_pid == 4'b0001));
-  assign when_UsbDeviceCtrl_l484 = (! ep_enable);
-  assign when_UsbDeviceCtrl_l487 = (token_endpoint != 4'b0000);
-  assign when_UsbDeviceCtrl_l502 = (((ep_head == 3'b000) || ep_stall) || regs_halt_hit);
-  assign when_UsbDeviceCtrl_l557 = (! desc_direction);
-  assign when_UsbDeviceCtrl_l635 = (transferFull && (! active_noUpdate));
-  assign when_UsbDeviceCtrl_l648 = (dataRx_hasError || active_dataRxOverrun);
-  assign when_UsbDeviceCtrl_l651 = (! active_noUpdate);
-  assign when_UsbDeviceCtrl_l654 = (dataRx_pid[2 : 0] != 3'b011);
-  assign when_UsbDeviceCtrl_l657 = ((! ep_stall) && (dataRx_pid[3] != ep_dataPhase));
-  assign when_UsbDeviceCtrl_l576 = (! transferFull);
-  assign when_UsbDeviceCtrl_l606 = (io_phy_rx_flow_payload[3 : 0] != (~ io_phy_rx_flow_payload[7 : 4]));
-  assign when_UsbDeviceCtrl_l608 = (io_phy_rx_flow_payload[3 : 0] != 4'b0010);
-  assign when_UsbDeviceCtrl_l614 = (rxTimer_timeout || ((! io_phy_rx_active) && io_phy_rx_active_regNext));
-  assign when_UsbDeviceCtrl_l620 = (! io_phy_rx_active);
-  assign when_UsbDeviceCtrl_l688 = (! token_isSetup);
-  assign when_UsbDeviceCtrl_l689 = ((! byteCounter_full) || (desc_completionOnFull && desc_full));
-  assign when_UsbDeviceCtrl_l738 = (token_endpoint == 4'b0000);
-  assign when_UsbDeviceCtrl_l739 = (regs_address_trigger && token_isIn);
-  assign when_UsbDeviceCtrl_l744 = (! desc_full);
+  assign when_UsbDeviceCtrl_l456 = (! token_ok);
+  assign when_UsbDeviceCtrl_l465 = (token_address == (regs_address_enable ? regs_address_value : 7'h00));
+  assign when_UsbDeviceCtrl_l468 = (token_address < 7'h04);
+  assign when_UsbDeviceCtrl_l470 = ((token_pid == 4'b1101) || (token_pid == 4'b0001));
+  assign when_UsbDeviceCtrl_l495 = (! ep_enable);
+  assign when_UsbDeviceCtrl_l498 = (token_endpoint != 4'b0000);
+  assign when_UsbDeviceCtrl_l513 = (((ep_head == 3'b000) || ep_stall) || regs_halt_hit);
+  assign when_UsbDeviceCtrl_l568 = (! desc_direction);
+  assign when_UsbDeviceCtrl_l646 = (transferFull && (! active_noUpdate));
+  assign when_UsbDeviceCtrl_l659 = (dataRx_hasError || active_dataRxOverrun);
+  assign when_UsbDeviceCtrl_l662 = (! active_noUpdate);
+  assign when_UsbDeviceCtrl_l665 = (dataRx_pid[2 : 0] != 3'b011);
+  assign when_UsbDeviceCtrl_l668 = ((! ep_stall) && (dataRx_pid[3] != ep_dataPhase));
+  assign when_UsbDeviceCtrl_l587 = (! transferFull);
+  assign when_UsbDeviceCtrl_l617 = (io_phy_rx_flow_payload[3 : 0] != (~ io_phy_rx_flow_payload[7 : 4]));
+  assign when_UsbDeviceCtrl_l619 = (io_phy_rx_flow_payload[3 : 0] != 4'b0010);
+  assign when_UsbDeviceCtrl_l625 = (rxTimer_timeout || ((! io_phy_rx_active) && io_phy_rx_active_regNext));
+  assign when_UsbDeviceCtrl_l631 = (! io_phy_rx_active);
+  assign when_UsbDeviceCtrl_l699 = (! token_isSetup);
+  assign when_UsbDeviceCtrl_l700 = ((! byteCounter_full) || (desc_completionOnFull && desc_full));
+  assign when_UsbDeviceCtrl_l749 = (token_endpoint == 4'b0000);
+  assign when_UsbDeviceCtrl_l750 = (regs_address_trigger && token_isIn);
+  assign when_UsbDeviceCtrl_l755 = (! desc_full);
   assign when_StateMachine_l253_1 = ((! (active_stateReg == active_enumDef_TOKEN)) && (active_stateNext == active_enumDef_TOKEN));
   assign when_StateMachine_l253_2 = ((! (active_stateReg == active_enumDef_DATA_RX)) && (active_stateNext == active_enumDef_DATA_RX));
   assign when_StateMachine_l253_3 = ((! (active_stateReg == active_enumDef_HANDSHAKE_RX_0)) && (active_stateNext == active_enumDef_HANDSHAKE_RX_0));
@@ -4490,7 +4502,7 @@ module UsbDeviceCtrl (
         end
       end
       main_enumDef_ACTIVE_INIT : begin
-        if(when_UsbDeviceCtrl_l773) begin
+        if(when_UsbDeviceCtrl_l784) begin
           main_stateNext = main_enumDef_ACTIVE;
         end
       end
@@ -4510,7 +4522,7 @@ module UsbDeviceCtrl (
     end
   end
 
-  assign when_UsbDeviceCtrl_l773 = (! io_phy_reset);
+  assign when_UsbDeviceCtrl_l784 = (! io_phy_reset);
   assign when_StateMachine_l253_4 = ((! (main_stateReg == main_enumDef_ACTIVE_INIT)) && (main_stateNext == main_enumDef_ACTIVE_INIT));
   assign when_StateMachine_l253_5 = ((! (main_stateReg == main_enumDef_ACTIVE)) && (main_stateNext == main_enumDef_ACTIVE));
   always @(posedge ctrlCd_clk or posedge ctrlCd_reset) begin
@@ -4568,7 +4580,7 @@ module UsbDeviceCtrl (
       if(dataTx_input_halfPipe_ready) begin
         dataTx_input_halfPipe_rValid <= dataTx_input_halfPipe_valid;
       end
-      if(when_UsbDeviceCtrl_l435) begin
+      if(when_UsbDeviceCtrl_l440) begin
         regs_halt_effective <= 1'b1;
       end
       if(when_BusSlaveFactory_l341) begin
@@ -4741,8 +4753,8 @@ module UsbDeviceCtrl (
             if(desc_interrupt) begin
               regs_interrupts_endpoints[_zz_regs_interrupts_endpoints] <= 1'b1;
             end
-            if(when_UsbDeviceCtrl_l738) begin
-              if(when_UsbDeviceCtrl_l739) begin
+            if(when_UsbDeviceCtrl_l749) begin
+              if(when_UsbDeviceCtrl_l750) begin
                 regs_address_enable <= 1'b1;
               end
               regs_address_trigger <= 1'b0;
@@ -4911,7 +4923,7 @@ module UsbDeviceCtrl (
       active_enumDef_TOKEN : begin
       end
       active_enumDef_ADDRESS_HIT : begin
-        if(!when_UsbDeviceCtrl_l451) begin
+        if(!when_UsbDeviceCtrl_l456) begin
           case(token_pid)
             4'b0101 : begin
               regs_frame <= token_data;
@@ -4927,9 +4939,9 @@ module UsbDeviceCtrl (
         ep_word <= memory_internal_readRsp_payload;
       end
       active_enumDef_EP_ANALYSE : begin
-        if(!when_UsbDeviceCtrl_l484) begin
+        if(!when_UsbDeviceCtrl_l495) begin
           if(token_isSetup) begin
-            if(!when_UsbDeviceCtrl_l487) begin
+            if(!when_UsbDeviceCtrl_l498) begin
               ep_word[15 : 4] <= 12'h001;
               desc_noDescriptorOffset <= 1'b1;
               desc_words_0[7 : 0] <= 8'h00;
@@ -4938,7 +4950,7 @@ module UsbDeviceCtrl (
               ep_word[3] <= 1'b0;
             end
           end else begin
-            if(when_UsbDeviceCtrl_l502) begin
+            if(when_UsbDeviceCtrl_l513) begin
               active_handshakePid <= ((ep_stall && (! regs_halt_hit)) ? 4'b1110 : 4'b1010);
               case(token_pid)
                 4'b0001 : begin
@@ -4968,18 +4980,18 @@ module UsbDeviceCtrl (
       end
       active_enumDef_DATA_RX : begin
         if(dataRx_data_valid) begin
-          if(when_UsbDeviceCtrl_l635) begin
+          if(when_UsbDeviceCtrl_l646) begin
             active_dataRxOverrun <= 1'b1;
           end
         end
       end
       active_enumDef_DATA_RX_ANALYSE : begin
-        if(!when_UsbDeviceCtrl_l648) begin
-          if(when_UsbDeviceCtrl_l651) begin
+        if(!when_UsbDeviceCtrl_l659) begin
+          if(when_UsbDeviceCtrl_l662) begin
             active_handshakePid <= 4'b0010;
           end
-          if(!when_UsbDeviceCtrl_l654) begin
-            if(when_UsbDeviceCtrl_l657) begin
+          if(!when_UsbDeviceCtrl_l665) begin
+            if(when_UsbDeviceCtrl_l668) begin
               active_noUpdate <= 1'b1;
               active_handshakePid <= 4'b0010;
             end
@@ -5000,8 +5012,8 @@ module UsbDeviceCtrl (
       active_enumDef_HANDSHAKE_RX_1 : begin
       end
       active_enumDef_UPDATE_SETUP : begin
-        if(when_UsbDeviceCtrl_l688) begin
-          if(when_UsbDeviceCtrl_l689) begin
+        if(when_UsbDeviceCtrl_l699) begin
+          if(when_UsbDeviceCtrl_l700) begin
             active_completion <= 1'b1;
           end
         end

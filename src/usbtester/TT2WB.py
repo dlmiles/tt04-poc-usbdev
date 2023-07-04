@@ -4,23 +4,13 @@
 #  Cocotb helper for the tt03_to_wishbone.v module
 #
 #
+from typing import Callable
 import cocotb
 from cocotb.triggers import ClockCycles
 from cocotb.binary import BinaryValue
 
-
-# BinaryValue has Z and X states so need to extract
-# FIXME make a version for multiple bits/mask
-def extract_bit(v: BinaryValue, bit: int) -> bool:
-    assert(bit >= 0)
-    if type(v) is BinaryValue:
-        s = v.binstr
-        if bit+1 > v.n_bits:
-            raise Exception(f"{bit+1} > {v.n_bits} from {v}")
-        p = s[-(bit+1)]
-        #print("extract_bit {} {} {} {} {} p={}".format(v, s, s[-(bit+2)], s[-(bit+1)], s[-(bit)], p))
-        return True if(p == '1') else False
-    raise Exception(f"type(v) is not BinaryValue: {type(v)}")
+from usbtester import *
+from usbtester.cocotbutil import *
 
 
 # These constants mirror the ones in tt04_to_wishbone.v
@@ -43,6 +33,7 @@ MIN_ADDRESS = 0x0000
 MAX_ADDRESS = 0xffff
 
 MAX_CYCLES  = 100000
+
 
 class TT2WB():
     dut = None
@@ -94,9 +85,12 @@ class TT2WB():
         return "{:04x}".format(addr)
 
     def addr_to_bus(self, addr: int) -> int:
+        assert addr & ~0xffff == 0, f"addr is {addr:04x} is out of range 16-bit"
+        assert addr % 4 == 0, f"addr is {addr:04x} is not modulus 4"
         return addr >> 2
 
     def addr_translate(self, addr: int) -> int:
+        assert addr & ~0x3fff == 0, f"addr is {addr:04x} is out of range 14-bit"
         return addr << 2
 
     def check_address(self, addr: int) -> int:
@@ -202,47 +196,60 @@ class TT2WB():
         return (d32, d0, d1, d2, d3)
 
 
-    async def exe_read(self, addr: int) -> int:
+    async def exe_read(self, addr: int, format: Callable[[int,int], str] = None) -> int:
         self.check_enable()
         (d32, d0, d1, d2, d3) = await self.exe_read_BinaryValue(addr)
 
         if d0.is_resolvable and d1.is_resolvable and d2.is_resolvable and d3.is_resolvable:
             data = (d3 << 24) | (d2 << 16) | (d1 << 8) | d0
-            self.dut._log.info("WB_READ  @{} = 0x{:08x}  b{} {} {} {}".format(self.addr_desc(addr), data, d3, d2, d1, d0))
+            fmtstr = format(data, addr) if(format) else ''
+            fmtstr = '' if(fmtstr is None) else fmtstr
+            self.dut._log.info("WB_READ  @{} = 0x{:08x}  b{} {} {} {} {}".format(self.addr_desc(addr), data, d3, d2, d1, d0, fmtstr))
+            self.reg_dump(addr, data, 'WB_READ ')
             return data
 
         self.dut._log.info("WB_READ  @{} = b{} {} {} {}  NOT-RESOLVABLE".format(self.addr_desc(addr), d3, d2, d1, d0))
         return None
 
 
-    async def exe_write(self, addr: int, data: int) -> bool:
+    async def exe_write(self, addr: int, data: int, format: Callable[[int,int], str] = None) -> bool:
         self.check_enable()
         addr = self.check_address(addr)
 
-        await self.send(CMD_AD0, self.addr_to_bus(addr & 0xff))
-        await self.send(CMD_AD1, self.addr_to_bus((addr >> 8) & 0xff))
+        await self.send(CMD_AD0, self.addr_to_bus(addr) & 0xff)
+        await self.send(CMD_AD1, (self.addr_to_bus(addr) >> 8) & 0xff)
         d = data
         for i in range(0, 4):
             await self.send(CMD_DO0, d & 0xff)
             d = d >> 8
         await self.send(CMD_EXEC, EXE_WRITE)
-        self.dut._log.debug("WB_WRITE {}", self.addr_desc(addr))
+        self.dut._log.debug("WB_WRITE {}".format(self.addr_desc(addr)))
 
         ack = await self.wb_ACK_wait()
 
         ackstr = '' if(ack is True) else 'NO-WB-ACK'
-        self.dut._log.info("WB_WRITE @{} = 0x{:08x} {}".format(self.addr_desc(addr), data, ackstr))
+        fmtstr = format(data, addr) if(format) else ''
+        fmtstr = '' if(fmtstr is None) else fmtstr
+        self.dut._log.info("WB_WRITE @{} = 0x{:08x} {} {}".format(self.addr_desc(addr), data, ackstr, fmtstr))
+        self.reg_dump(addr, data, 'WB_WRITE')
         return ack
 
 
     async def wb_read_BinaryValue(self, addr: int) -> tuple:
         return await self.exe_read_BinaryValue(addr)
 
-    async def wb_read(self, addr: int) -> int:
-        return await self.exe_read(addr)
+    async def wb_read(self, addr: int, format: Callable[[int,int], str] = None) -> int:
+        return await self.exe_read(addr, format)
 
-    async def wb_write(self, addr: int, data: int) -> bool:
-        return await self.exe_write(addr, data)
+    async def wb_write(self, addr: int, data: int, format: Callable[[int,int], str] = None) -> bool:
+        return await self.exe_write(addr, data, format)
+
+    def reg_dump(self, addr: int, value: int, pfx: str = '') -> None:
+        regname = addr_to_regname(addr)
+        if regname:
+            regdesc = addr_to_regdesc(addr, value)
+            if regdesc:
+                self.dut._log.info("{} @{} {:13s} = {}".format(pfx, self.addr_desc(addr), regname, regdesc))
 
     async def wb_dump(self, addr: int, count: int) -> int:
         self.check_enable()
@@ -257,9 +264,19 @@ class TT2WB():
             s2 = chr(d2) if(d2.is_resolvable and chr(d2.integer).isprintable()) else '.'
             s3 = chr(d3) if(d3.is_resolvable and chr(d3.integer).isprintable()) else '.'
             data = "0x{:08x}".format(d32.integer) if(d32.is_resolvable) else '0x????????'
-            offstr = "+0x{:04x}".format(offset) if(addr != offset) else ''
+            offstr = "+0x{:04x}".format(offset) if(addr != offset and count > 4) else ''
+            regname = addr_to_regname(addr)
+            if regname and count == 4:
+                offstr = " {:13s}".format(regname)
             self.dut._log.info("WB_DUMP  @{}{} = {}  b{} {} {} {}  {}  {}{}{}{}".format(self.addr_desc(addr), offstr, data, d3, d2, d1, d0, d32, s0, s1, s2, s3))
+            if d32.is_resolvable:
+                self.reg_dump(addr, d32.integer, 'WB_DUMP ')
             left -= 4
             addr += 4
             offset += 4
         return count
+
+
+__all__ = [
+    'TT2WB'
+]

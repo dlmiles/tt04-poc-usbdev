@@ -1,5 +1,7 @@
 #
 #
+#
+#
 
 class RomReader():
     index = -1
@@ -86,3 +88,8 @@ class RomReader():
     
         print("LOADED:{}:{} with {} bytes".format(filename, line_number, len(data)))
         return data
+
+
+__all__ = [
+    'RomReader'
+]

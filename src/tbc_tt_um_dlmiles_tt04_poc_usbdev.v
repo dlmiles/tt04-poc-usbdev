@@ -19,13 +19,21 @@ module tb_usbdev (
 `endif
 `endif
 );
+`ifndef SYNTHESIS
+    reg [(8*32)-1:0] DEBUG;
+    reg DEBUG_wire;
+`endif
 
     initial begin
         //$dumpfile ("tb_usbdev.vcd");
         $dumpfile ("tb.vcd");	// Renamed for GHA
         $dumpvars (0, tb_usbdev);
         #1;
+        
+        DEBUG <= {8'h44, 8'h45, 8'h42, 8'h55, 8'h47, {27{8'h20}}}; // "DEBUG        "
+        DEBUG_wire <= 0;
     end
+
 
     tt_um_dlmiles_tt04_poc_usbdev dut (
 `ifdef GL_TEST

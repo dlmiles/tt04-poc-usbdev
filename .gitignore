@@ -8,4 +8,5 @@ src/__pycache__/
 src/results.xml
 src/user_config.tcl
 
+__pycache__/
 *~

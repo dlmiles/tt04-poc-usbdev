@@ -63,6 +63,12 @@ module tt04_to_wishbone (
     reg STB;	// aka bus active
     reg WE;
 
+`ifndef SYNTHESIS
+    // This exists only to allow easier debugging of wave
+    wire [15:0] ADR_debug;
+    assign ADR_debug = {ADR << 2,2'b00};
+`endif
+
     wire [2:0] cmd;
     assign cmd = uio_in[7:5];
     reg valid;

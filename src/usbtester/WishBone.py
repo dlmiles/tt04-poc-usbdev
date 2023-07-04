@@ -131,3 +131,8 @@ class WishBone():
             addr += 4
             offset += 4
         return count
+
+
+__all__ = [
+    'WishBone'
+]
