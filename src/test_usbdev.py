@@ -14,11 +14,21 @@ from cocotb.binary import BinaryValue
 
 from usbtester import *
 from usbtester.cocotbutil import *
-from usbtester.TT2WB import TT2WB
-from usbtester.UsbDevDriver import UsbDevDriver
+from usbtester.TT2WB import *
+from usbtester.UsbDevDriver import *
 from usbtester.UsbBitbang import *
 from usbtester.Payload import *
 import usbtester.RomReader
+
+
+from test_tt2wb import test_tt2wb_raw, test_tt2wb_cooked
+
+
+DATAPLUS_BITID		= 0
+DATAMINUS_BITID		= 1
+INTERRUPTS_BITID	= 2
+POWER_BITID		= 3
+
 
 ###
 ###
@@ -115,7 +125,29 @@ def resolve_GL_TEST():
 
 
 def grep_file(filename: str, pattern1: str, pattern2: str) -> bool:
-    # FIXME maybe we exec sed -e '' -i filename?
+    # The rx_timerLong constants that specify counter units to achieve USB
+    #  specification wall-clock timing requirements based on the 48MHz phyCd_clk.
+    #
+    # resume   HOST instigated, reverse polarity for > 20ms, then a LS EOP.
+    #            reverse polarity to what? (does this mean HS/LS)
+    #            LS EOP has a specific polarity
+    #          DEVICE instigated (optional), send K state for >1ms and <15ms.
+    #            Can only be starte after being idle >5ms
+    #               (check how this interacts with suspend state)
+    #            Host will respond within 1ms (I assume from not sending K state)
+    #          Timer 0xe933f looks to be 19.899ms @48MHz
+    #
+    # reset    HOST send SE0 for >= 10ms, DEVICE may notice after 2.5us
+    #          Timer 0x7403f looks to be 9.899ms @48MHz
+    #
+    # suspend  HOST send IDLE(J) for >= 3ms, is a suspend condition.
+    #          This is usually inhibited by SOF(HS) or KeepAlive/EOP(LS) every 1ms.
+    #          Timer 0x21fbf looks to be 2.899ms @48MHz
+    #
+    # The SIM values are 1/200 to speed up simulation testing.
+    #
+    # We have something in the GHA CI to patch this matter (ensure the production values are put back) with 'sed -i'.
+    #
     # PRODUCTION
     # -  assign rx_timerLong_resume = (rx_timerLong_counter == 23'h0e933f);
     # -  assign rx_timerLong_reset = (rx_timerLong_counter == 23'h07403f);
@@ -138,6 +170,54 @@ def grep_file(filename: str, pattern1: str, pattern2: str) -> bool:
     raise Exception(f"Unable to find any match from file: {filename} for regex {pattern1}")
 
 
+def signal_interrupts(dut) -> bool:
+    return extract_bit(dut.uio_out, INTERRUPTS_BITID)
+
+
+def signal_power_change(dut, bf: bool) -> bool:
+    return change_bit(dut.uio_in, POWER_BITID, bf)
+
+
+FSM = {
+    'main':      'dut.usbdev.ctrl.ctrl_logic.main_stateReg_string',
+    'active':    'dut.usbdev.ctrl.ctrl_logic.active_stateReg_string',
+    'token':     'dut.usbdev.ctrl.ctrl_logic.token_stateReg_string',
+    'rx_packet': 'dut.usbdev.ctrl.phy_logic.rx_packet_stateReg_string',
+    'tx_frame':  'dut.usbdev.ctrl.phy_logic.tx_frame_stateReg_string'
+}
+
+
+def fsm_signal_path(label: str) -> str:
+    if label in FSM:
+        return FSM[label]
+    raise Exception(f"Unable to find fsm_signal: {label}")
+
+
+def fsm_printable(signal: cocotb.handle.NonHierarchyObject) -> str:
+    assert isinstance(signal, cocotb.handle.NonHierarchyObject)
+    value = signal.value
+    if value.is_resolvable and signal._path.endswith('_string'):
+        # Convert to string
+        return value.buff.decode('ascii').rstrip()
+    else:
+        return str(value.value)
+
+
+def fsm_state(dut, label: str) -> str:
+    path = fsm_signal_path(label)
+
+    signal = design_element(dut, path)
+    if signal is None:
+        raise Exception(f"Unable to find signal path: {path}")
+
+    return fsm_printable(signal)
+
+
+def fsm_state_expected(dut, label: str, expected: str) -> bool:
+    state = fsm_state(dut, label)
+    assert state == expected, f"fsm_state({label}) in state {state} expected state {expected}"
+    return True
+
 
 ## FIXME see if we can register multiple items here (to speed up simulation?) :
 ##   signal, prefix/label, lambda on change, lambda on print
@@ -146,13 +226,6 @@ def grep_file(filename: str, pattern1: str, pattern2: str) -> bool:
 def monitor(dut, path: str, prefix: str = None) -> None:
     value = None
 
-    def printable(v) -> str:
-        if v.is_resolvable and path.endswith('_string'):
-            # Convert to string
-            return v.buff.decode('ascii').rstrip()
-        else:
-            return str(v.value)
-
     signal = design_element(dut, path)
     if signal is None:
         raise Exception(f"Unable to find signal path: {path}")
@@ -160,14 +233,14 @@ def monitor(dut, path: str, prefix: str = None) -> None:
     pfx = prefix if(prefix) else path
 
     value = signal.value
-    dut._log.info("monitor({}) = {} [STARTED]".format(pfx, printable(value)))
+    dut._log.info("monitor({}) = {} [STARTED]".format(pfx, fsm_printable(signal)))
 
     while True:
         # in generator-based coroutines triggers are yielded
         yield ClockCycles(dut.clk, 1)
         new_value = signal.value
         if new_value != value:
-            s = printable(new_value)
+            s = fsm_printable(signal)
             dut._log.info("monitor({}) = {}".format(pfx, s))
             value = new_value
 
@@ -278,87 +351,19 @@ async def test_usbdev(dut):
     print("HH ele={} {}".format(try_path(ele), try_value(ele)))
 
 
-    ## FIXME move this stuff to testing tt04_to_wishbone.v separately
-    dut.uio_in.value = 0x20
-    dut.ui_in.value = 0x01
-    await ClockCycles(dut.clk, 1)
-    #while dut.dut.wb_ACK.value == 0:
-    #    await ClockCycles(dut.clk, 1)
-    dut.uio_in.value = 0x00
-    await ClockCycles(dut.clk, 1)
+    debug(dut, '001_TT2WB_RAW')
+    await test_tt2wb_raw(dut)
 
-    await ClockCycles(dut.clk, 1)
+    debug(dut, '002_TT2WB_COOKED')
+    await test_tt2wb_cooked(dut)
 
-    dut.uio_in.value = 0x20	# EXEC
-    dut.ui_in.value = 0x05	# EXE_ENABLE
-    await ClockCycles(dut.clk, 1)
-
-
-    dut.uio_in.value = 0x40
-    dut.ui_in.value = 0x21	# AD0
-    await ClockCycles(dut.clk, 1)
-    dut.uio_in.value = 0x60
-    dut.ui_in.value = 0x43	# AD1
-    await ClockCycles(dut.clk, 1)
-
-    dut.uio_in.value = 0x80
-    dut.ui_in.value = 0x98	# DO0
-    await ClockCycles(dut.clk, 1)
-    dut.uio_in.value = 0x80
-    dut.ui_in.value = 0xba	# DO1
-    await ClockCycles(dut.clk, 1)
-    dut.uio_in.value = 0x80
-    dut.ui_in.value = 0xdc	# DO2
-    await ClockCycles(dut.clk, 1)
-    dut.uio_in.value = 0x80
-    dut.ui_in.value = 0xfe	# DO3
-    await ClockCycles(dut.clk, 1)
-
-    dut.uio_in.value = 0x20	# EXEC
-    dut.ui_in.value = 0x07	# EXE_WRITE
-    await ClockCycles(dut.clk, 1)
-
-    while not extract_bit(dut.dut.uio_out.value, 4):
-        await ClockCycles(dut.clk, 1)
-
-    dut.uio_in.value = 0x20	# EXEC
-    dut.ui_in.value = 0x05	# EXE_ENABLE
-    await ClockCycles(dut.clk, 1)
-
-    dut.uio_in.value = 0x20	# EXEC
-    dut.ui_in.value = 0x07	# EXE_WRITE
-    await ClockCycles(dut.clk, 1)
-
-    while not extract_bit(dut.dut.uio_out.value, 4):
-        await ClockCycles(dut.clk, 1)
-
-    dut.uio_in.value = 0x20	# EXEC
-    dut.ui_in.value = 0x05	# EXE_ENABLE
-    await ClockCycles(dut.clk, 1)
-
-    dut.uio_in.value = 0x20	# EXEC
-    dut.ui_in.value = 0x06	# EXE_READ
-    await ClockCycles(dut.clk, 1)
-
-    while not extract_bit(dut.dut.uio_out.value, 4):
-        await ClockCycles(dut.clk, 1)
-
-    dut.uio_in.value = 0x20	# EXEC
-    dut.ui_in.value = 0x04	# EXE_DISABLE
-    await ClockCycles(dut.clk, 1)
-
-    dut.uio_in.value = 0x20	# EXEC
-    dut.ui_in.value = 0x01	# EXE_RESET
-    await ClockCycles(dut.clk, 1)
-
-    await ClockCycles(dut.clk, 256)
 
     # Start these now as they will fire during USB interface RESET sequence
     # Defered the other FSM monitors setup due to significant simulation slowdown
     await cocotb.start(monitor(dut, 'dut.usbdev.interrupts',                               'interrupts'))
     await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.main_stateReg_string',     'main'))
 
-    debug(dut, '001_WISHBONE')
+    debug(dut, '003_WISHBONE')
 
     ttwb = TT2WB(dut)
 
@@ -367,30 +372,31 @@ async def test_usbdev(dut):
 
     await ttwb.exe_enable()
 
-    await ttwb.idle()
+    await ttwb.exe_idle()
 
     await ttwb.exe_disable()
 
-    await ttwb.idle()
+    await ttwb.exe_idle()
 
     await ttwb.exe_enable()
 
-    await ttwb.exe_write(0x1234, 0xfedcba98)
+    await ttwb.exe_write(addr=0x1234, data=0xfedcba98)
     # test write cycle over WB
-    await ttwb.exe_write(0xff80, 0xff80fe7f)
+    await ttwb.exe_write(addr=0xff80, data=0xff80fe7f)
     # test write cycle over WB
 
     v = await ttwb.exe_read(0x0000)
     # v == xxxxxxxx (uninit mem inside usbdev)
 
-    await ttwb.idle()
+    await ttwb.exe_idle()
 
-    await ttwb.exe_write(0x0000, 0x76543210)
+    await ttwb.exe_write(addr=0x0000, data=0x76543210)
 
     v = await ttwb.exe_read(0x0000)
     assert(v == 0x76543210), f"unexpected readback of WB_READ(0x0000) = 0x{v:x} (expected 0x76543210)"
 
-    await ttwb.exe_write(0x0000, 0x00000000)
+
+    await ttwb.exe_write(addr=0x0000, data=0x00000000)
 
     v = await ttwb.exe_read(0x0000)
     assert(v == 0x00000000), f"unexpected readback of WB_READ(0x0000) = 0x{v:x} (expected 0x00000000)"
@@ -399,6 +405,7 @@ async def test_usbdev(dut):
 
     await ttwb.exe_reset()
 
+    debug(dut, '003_WISHBONE_PROBE')
 
     await ttwb.exe_enable()
 
@@ -407,8 +414,9 @@ async def test_usbdev(dut):
     for a in range(0, ADDRESS_LENGTH+1, 4):
         i = a & 0xff
         d = ((i+3) << 24) | ((i+2) << 16) | ((i+1) << 8) | (i)
-        await ttwb.exe_write(a, d)
+        await ttwb.exe_write(d, a)
 
+    # This is probing the wishbone address space to find the end of the memory buffer
     end_of_buffer = -1
     for a in range(0, ADDRESS_LENGTH+1, 4):
         i = a & 0xff
@@ -425,9 +433,10 @@ async def test_usbdev(dut):
 
     await ttwb.wb_dump(REG_FRAME, 0x30)
 
+    debug(dut, '003_WISHBONE_ZERO')
 
     for a in range(0, ADDRESS_LENGTH+1, 4):	# zero out memory buffer
-        await ttwb.exe_write(a, 0x00000000)
+        await ttwb.exe_write(0x00000000, a)
 
     await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
 
@@ -454,9 +463,7 @@ async def test_usbdev(dut):
     await ttwb.wb_dump(REG_CONFIG, 4)
     await ttwb.wb_dump(REG_INFO, 4)
 
-    # Perform reset sequence
-    #reset_seq = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-    #await send_sequence_in8(dut, reset_seq)
+    #############################################################################################
 
     await ClockCycles(dut.clk, 256)
 
@@ -464,11 +471,27 @@ async def test_usbdev(dut):
     OVERSAMPLE = 4	# 48MHz / 12MHz
     TICKS_PER_BIT = PHY_CLK_FACTOR * OVERSAMPLE
 
-    # FIXME why are both the WriteEnable high for output at startup
+    # Why are both the WriteEnable high for output at startup ?  With both D+/D- low.  SE0 condx
+    dut._log.info("{} = {}".format(dut.dut.usb_dm_write._path, str(dut.dut.usb_dm_write.value)))
+    dut._log.info("{} = {}".format(dut.dut.usb_dm_writeEnable._path, str(dut.dut.usb_dm_writeEnable.value)))
+    dut._log.info("{} = {}".format(dut.dut.usb_dp_write._path, str(dut.dut.usb_dp_write.value)))
+    dut._log.info("{} = {}".format(dut.dut.usb_dp_writeEnable._path, str(dut.dut.usb_dp_writeEnable.value)))
+    #assert dut.dut.usb_dm_write.value == 0, f"{dut.dut.usb_dm_write._path} = {str(dut.dut.usb_dm_write.value)}"
+    assert dut.dut.usb_dm_writeEnable.value == 0
+    #assert dut.dut.usb_dp_write.value == 0
+    assert dut.dut.usb_dp_writeEnable.value == 0
 
-    # TODO work out how to get the receiver started
-    #  for a start writeEnable of DP&DM is set
-    dut.uio_in.value = dut.uio_in.value | 0x08	# POWER bit3
+    ## Check FSM(main) state currently is ATTACHED
+    assert fsm_state_expected(dut, 'main', 'ATTACHED')
+
+    # Receiver started for a start writeEnable of DP&DM is set
+    signal_power_change(dut, True)	# POWER uio_in bit3
+
+    await ClockCycles(dut.clk, 4)	# to let FSM update
+
+    ## Check FSM(main) state goes to POWERED
+    assert fsm_state_expected(dut, 'main', 'POWERED')
+
     await ClockCycles(dut.clk, 128)
 
     usb = UsbBitbang(dut, TICKS_PER_BIT = TICKS_PER_BIT)
@@ -476,7 +499,13 @@ async def test_usbdev(dut):
     debug(dut, '002_RESET')
 
     #############################################################################################
-    # Reset 10ms (ok this sequnce works but takes too long to simulate, for test/debug)
+    # Reset 10ms (ok this sequence works but takes too long to simulate, for test/debug)
+    #
+    # To speed it up the verilog can be built with 1/200 reduced rx_timerLong constants
+    #
+    # So this section detects and confirms how it was built and prevents the wrong values
+    #  making it to production.
+    #
     await usb.send_SE0()	# !D+ bit0 !D- bit1 = SE0 RESET
 
     # FIXME
@@ -510,26 +539,28 @@ async def test_usbdev(dut):
     else:
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SKIPPED".format(reset_ticks))
 
-    v = await ttwb.wb_read(REG_INTERRUPT, format_reg_interrupt)
-    assert v & 0x00010000 != 0, f"REG_INTERRUPT expected to see: RESET"
-    # FIXME check out the RC status is correct or if it should be RWC
-    await ttwb.wb_write(REG_INTERRUPT, 0x00010000, format_reg_interrupt)
-    v = await ttwb.wb_read(REG_INTERRUPT, format_reg_interrupt)	# RC
-    if v & 0x00010000 != 0:
+    # REG_INTERRUPT also has 0x0001000 set for RESET
+    v = await ttwb.wb_read(REG_INTERRUPT, regrd)
+    assert v & INTR_RESET != 0, f"REG_INTERRUPT expected to see: RESET bit set"
+    await ttwb.wb_write(REG_INTERRUPT, INTR_RESET, regwr)	# W1C
+    v = await ttwb.wb_read(REG_INTERRUPT, regrd)
+    if v & INTR_RESET != 0:
         dut._log.warning("REG_INTERRUPT expected to see: RESET bit clear {:08x}".format(v))
-    #assert v & 0x00010000 == 0, f"REG_INTERRUPT expected to see: RESET bit clear"
-    #assert v == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{v:08x}"
+    assert v & INTR_RESET == 0, f"REG_INTERRUPT expected to see: RESET bit clear"
 
-    # FIXME
+    # FIXME understand the source of this interrupt (it seems RESET+DISCONNECT are raised at the same time)
     # REG_INTERRUPT also has 0x0010000 set for DISCONNECT
-    await ttwb.wb_write(REG_INTERRUPT, 0x00100000, format_reg_interrupt)
-    v = await ttwb.wb_read(REG_INTERRUPT)	# RC
-    if v & 0x00100000 != 0:
+    assert v & INTR_DISCONNECT != 0, f"REG_INTERRUPT expected to see: DISCONNECT bit set"
+    await ttwb.wb_write(REG_INTERRUPT, INTR_DISCONNECT, regwr)	# W1C
+    v = await ttwb.wb_read(REG_INTERRUPT, regrd)
+    if v & INTR_DISCONNECT != 0:
         dut._log.warning("REG_INTERRUPT expected to see: DISCONNECT bit clear {:08x}".format(v))
+    assert v & INTR_DISCONNECT == 0, f"REG_INTERRUPT expected to see: DISCONNECT bit clear"
 
-    # FIXME fetch out before and check ATTACHED
-    # FIXME fetch out before and check POWERED
-    # FIXME fetch out 'dut.usbdev.ctrl.ctrl_logic.main_stateReg_string' == 'ACTIVE_INIT'  011b
+    assert v == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{v:08x}"
+
+    ## Check FSM(main) state goes to ACTIVE_INIT
+    assert fsm_state_expected(dut, 'main', 'ACTIVE_INIT')
 
     ## LS mode is setup by IDLE state D- assertion
     ## HS mode (default) is setup by IDLE state D+ assertion
@@ -551,6 +582,9 @@ async def test_usbdev(dut):
     debug(dut, '003_SETUP_BITBANG')
 
     await usb.send_idle()
+
+    ## Check FSM(main) state goes to ACTIVE
+    assert fsm_state_expected(dut, 'main', 'ACTIVE')
 
     # SYNC sequence 8'b00000001  KJKJKJKK
     # FIXME check we can hold a random number of J-IDLE states here
@@ -698,15 +732,14 @@ async def test_usbdev(dut):
 
     await ClockCycles(dut.clk, 17)	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+1=17
     ## Manage interrupt and reset
-    ## FIXME write helper to access dut.dut.interrupts (from extenal interface)
-    assert dut.dut.interrupts.value != 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+    assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
     data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
     assert data & INTR_EP0SETUP != 0, f"REG_INTERRUPT expects EP0SETUP to fire {v:08x}"
     await ttwb.wb_write(REG_INTERRUPT, INTR_EP0SETUP, regdesc)
     data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
     assert data & INTR_EP0SETUP == 0, f"REG_INTERRUPT expects EP0SETUP to clear {v:08x}"
     assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
-    assert dut.dut.interrupts.value == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
     # Validate 8 bytes of SETUP made it into the buffer location
     data = await ttwb.wb_read(REG_SETUP0, regdesc)
@@ -760,14 +793,20 @@ async def test_usbdev(dut):
     await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## wait for TX to finish
 
     ## FIXME check out why there is no interrupt raised for EP0 completion (maybe because we are not expected to operate here but on another address after SET_ADDRESS)
-    #assert dut.dut.interrupts.value != 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+    # Originally the interrupt did not fire just because the buffer was full.
+    # But that should an allowed condition.
+    # The hardware has dataRxOverrun detection which is a proper reason for it not to fire,
+    #  it also has a mode desc.completionOnFull which should be more appropiately renamed to desc.completionOnOverrun
+    #  but IMHO it should at least mark an error occured that is visible to the driver.
+    #
+    assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
     data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    #assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
-    #await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regdesc)
+    assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
+    await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
     data = await ttwb.wb_read(REG_INTERRUPT, regrd)
     assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {v:08x}"
     assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
-    assert dut.dut.interrupts.value == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
     ## FIXME this doesn't seem correct to me
     data = await ttwb.wb_read(REG_EP0, regrd)
@@ -775,8 +814,8 @@ async def test_usbdev(dut):
     assert data & 0x00000008 != 0, f"REG_EP0 expected dataPhase to be updated {data:08x}"
     data = await ttwb.wb_read(BUF_DESC0, lambda v,a: desc0_format(v))
     assert data & 0x000003ff == 8, f"DESC0 expected offset to be 8"
-    ## FIXME this is surely wrong!  code=INPROGRESS
-    assert data & 0x000f0000 == 0x000f0000, f"DESC0 expected code={data:08x}"
+    ## code=SUCCESS
+    assert data & 0x000f0000 == 0x00000000, f"DESC0 expected code={data:08x}"
     data = await ttwb.wb_read(BUF_DESC1, lambda v,a: desc1_format(v))
     data = await ttwb.wb_read(BUF_DESC2, lambda v,a: desc2_format(v))
     ## FIXME IMHO if this was successful, there is insufficient indication of that succcess
@@ -811,27 +850,22 @@ async def test_usbdev(dut):
     await usb.send_idle()
 
     await ClockCycles(dut.clk, 17)	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+1=17
-    ## FIXME check out why there is no interrupt raised for EP0 completion (maybe because we are not expected to operate here but on another address after SET_ADDRESS)
-    #assert dut.dut.interrupts.value != 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+    assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
     data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    #assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
-    #await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regdesc)
+    assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
+    await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
     data = await ttwb.wb_read(REG_INTERRUPT, regrd)
     assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {v:08x}"
     assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
-    assert dut.dut.interrupts.value == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
-    ## FIXME this doesn't seem correct to me
     data = await ttwb.wb_read(REG_EP0, regrd)
-    # This is not useful
     assert data & 0x00000008 != 0, f"REG_EP0 expected dataPhase to be updated {data:08x}"
     data = await ttwb.wb_read(BUF_DESC0, lambda v,a: desc0_format(v))
     assert data & 0x000003ff == 8, f"DESC0 expected offset to be 8"
-    ## FIXME this is surely wrong!  code=INPROGRESS
-    assert data & 0x000f0000 == 0x000f0000, f"DESC0 expected code={data:08x}"
+    assert data & 0x000f0000 == 0x00000000, f"DESC0 expected code={data:08x}"
     data = await ttwb.wb_read(BUF_DESC1, lambda v,a: desc1_format(v))
     data = await ttwb.wb_read(BUF_DESC2, lambda v,a: desc2_format(v))
-    ## FIXME IMHO if this was successful, there is insufficient indication of that succcess
 
     # Validate 8 bytes of PAYLOAD made it into the buffer location
     data = await ttwb.wb_read(BUF_DATA0)
@@ -941,6 +975,11 @@ async def test_usbdev(dut):
 
 
     ## FIXME observe DATA0/DATA1 generation (not here, move that test)
+
+
+    ### FIXME large packets
+    ### FIXME too large packets (> endp.max_packet_size)
+    ### FIXME large packets with heavy bit-stuffing (USB spec test patterns ?)
 
 
 

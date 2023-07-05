@@ -4,6 +4,7 @@
 #
 #
 #
+from typing import Any, Callable
 import cocotb
 from cocotb.binary import BinaryValue
 
@@ -135,23 +136,89 @@ def debug(dut, value: str, ele_name='DEBUG', mode: int = 8) -> None:
     dut._log.debug("debug({})".format(value))
 
 
+
+def default_mapper(s: str) -> bool:
+    # Only 1 is true all else if False
+    return True if(s == '1') else False
+
+
 # BinaryValue can have Z and X states so sometime we just want to extract 1 bit
 # TODO make a version for multiple bits/mask
-def extract_bit(v, bit: int) -> bool:
-    assert(bit >= 0)
-    assert type(v) is BinaryValue or type(v) is int or type(v) is bool
+def binary_value_bit(bv: BinaryValue, bitid: int, value: Any = None, mapper: Callable[[str],bool] = None) -> bool:
+    assert bitid >= 0
+    assert isinstance(bv, BinaryValue)
+
+    s = bv.binstr
+    biti = bitid+1 # 1-based index
+    if biti > bv.n_bits:
+        raise Exception(f"{biti} > {bv.n_bits} from {bv}")
+    # The minus characters are due to bit0 being at the right-hand-side
+    msb = s[:-(biti)]
+    lsb = s[-(biti-1):]
+    p = s[-(biti)]
+
+    dbg1 = "{} {} {}".format(s[-(biti+1)], s[-(biti)], s[-(biti-1)]) if(bv.n_bits > bitid+1) else "small={}".format(bv.n_bits)
+    dbg2 = "{} {} {} {}".format(dbg1, msb, p, lsb)
+
+    if value is not None:
+        if isinstance(value, bool):
+            bitstr = '1' if(value) else '0'
+        else:
+            bitstr = str(value)
+        nvstr = msb + bitstr + lsb
+        print("binary_value_bit {} {} {} {} SET {} {} => {}".format(value, bitid, s, dbg2, value, bitstr, nvstr))
+        assert len(s) == len(nvstr)
+        nv = BinaryValue(nvstr, n_bits=bv.n_bits)
+        assert nv.n_bits == bv.n_bits
+    else:
+        print("binary_value_bit {} {} {} {} GET".format(value, bitid, s, dbg2))
+        nv = bv
+
+    if mapper:
+        return (nv, mapper(p), p)
+    else:
+        return (nv, default_mapper(p), p)
+
+
+def extract_bit(v, bitid: int) -> bool:
+    assert(bitid >= 0)
+    if isinstance(v, cocotb.handle.NonHierarchyObject):
+        v = v.value
+    assert isinstance(v, BinaryValue) or isinstance(v, int) or isinstance(v, bool)
     if type(v) is int:
         v = BinaryValue(v, n_bits=v.bit_length())
     if type(v) is bool:
         v = BinaryValue(v, n_bits=1)
     if type(v) is BinaryValue:
-        s = v.binstr
-        if bit+1 > v.n_bits:
-            raise Exception(f"{bit+1} > {v.n_bits} from {v}")
-        p = s[-(bit+1)]
-        #print("extract_bit {} {} {} {} {} p={}".format(v, s, s[-(bit+2)], s[-(bit+1)], s[-(bit)], p))
-        return True if(p == '1') else False
+        (nbv, mv, sv) = binary_value_bit(v, bitid)
+        return mv
+        #s = v.binstr
+        #if bitid+1 > v.n_bits:
+        #    raise Exception(f"{bitid+1} > {v.n_bits} from {v}")
+        #p = s[-(bitid+1)]
+        ##print("extract_bit {} {} {} {} {} p={}".format(v, s, s[-(bitid+2)], s[-(bitid+1)], s[-(bitid)], p))
+        #return True if(p == '1') else False
     raise Exception(f"type(v) is not a type we understand: {type(v)}")
+
+
+def change_bit(signal, bitid: int, bf: bool) -> bool:
+    assert(bitid >= 0 and bitid <= 32)
+    assert isinstance(signal, cocotb.handle.ModifiableObject), f"{type(signal)} is not the expected type {type(cocotb.handle.ModifiableObject)}"
+    v = signal.value
+    if type(v) is BinaryValue:
+        (nbv, mv, sv) = binary_value_bit(v, bitid, bf)
+        signal.value = nbv
+        return mv
+    raise Exception(f"type(v) is not a type we understand: {type(v)}")
+
+
+def clear_bit(signal, bitid: int) -> bool:
+    return change_bit(signal, bitid, False)
+
+
+def set_bit(signal, bitid: int) -> bool:
+    return change_bit(signal, bitid, True)
+
 
 
 __all__ = [
@@ -170,5 +237,8 @@ __all__ = [
 
     'debug',
 
-    'extract_bit'
+    'extract_bit',
+    'clear_bit',
+    'set_bit',
+    'change_bit'
 ]

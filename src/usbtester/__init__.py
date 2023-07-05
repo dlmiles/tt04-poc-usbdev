@@ -19,7 +19,11 @@ INTR_EP0	= 0x00000001
 INTR_EP1	= 0x00000002
 INTR_EP2	= 0x00000004
 INTR_EP3	= 0x00000008
+INTR_RESET	= 0x00010000
 INTR_EP0SETUP	= 0x00020000
+INTR_SUSPEND    = 0x00040000
+INTR_RESUME     = 0x00080000
+INTR_DISCONNECT = 0x00100000
 
 
 # Shared Memory Layout
@@ -96,43 +100,40 @@ class Reg(IntEnum):
         return self is Reg.ALL
 
 
-def reg_frame_desc(value: int, verbose: bool = False) -> str:
-    if not verbose and value == 0:
+def reg_frame_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
+    if mode is Reg.NONE:
         return None
-    return "0x{:08x}".format(
-        value
-    )
+    if mode.has(Reg.READ):	# UVM=RO
+        return "0x{:08x}".format(value)
+    return None
 
 
 def reg_address_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
     if mode is Reg.NONE:
         return None
     l = list()
-    if mode.has(Reg.WRITE, Reg.DEFAULT):
+    if mode.has(Reg.WRITE):	# UVM=WO
         l.append("address=0x{:02x} {}".format(value & 0x7f, value & 0x7f))
-    if mode.has(Reg.WRITE, Reg.DEFAULT) and value & 1 << 8:
-        l.append("enable")
-    if mode.has(Reg.WRITE, Reg.DEFAULT) and value & 1 << 18:
-        l.append("trigger")
-    s = ', '.join(l)
-    return "0x{:08x}".format(
-        value
-    )
+    if mode.has(Reg.WRITE) and value & 1 << 8:
+        l.append("enable")	# UVM=WO
+    if mode.has(Reg.WRITE) and value & 1 << 18:
+        l.append("trigger")	# UVM=WO
+    return ', '.join(l)
 
 
-def reg_interrupt_desc(value: int, verbose: bool = False) -> str:
-    if not verbose and value == 0:
+def reg_interrupt_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
+    if mode is Reg.NONE:
         return None
     l = list()
-    if value & 1 << 16:
+    if mode.has(Reg.READ, Reg.WRITE, Reg.DEFAULT) and value & 1 << 16:
         l.append("RESET")
-    if value & 1 << 17:
+    if mode.has(Reg.READ, Reg.WRITE, Reg.DEFAULT) and value & 1 << 17:
         l.append("EP0")
-    if value & 1 << 18:
+    if mode.has(Reg.READ, Reg.WRITE, Reg.DEFAULT) and value & 1 << 18:
         l.append("suspend")
-    if value & 1 << 19:
+    if mode.has(Reg.READ, Reg.WRITE, Reg.DEFAULT) and value & 1 << 19:
         l.append("resume")
-    if value & 1 << 20:
+    if mode.has(Reg.READ, Reg.WRITE, Reg.DEFAULT) and value & 1 << 20:
         l.append("disconnect")
     s = ', '.join(l)
     return "[{}] {}".format(
@@ -141,57 +142,56 @@ def reg_interrupt_desc(value: int, verbose: bool = False) -> str:
     )
 
 
-def reg_halt_desc(value: int, verbose: bool = False) -> str:
-    if not verbose and value == 0:
+def reg_halt_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
+    if mode is Reg.NONE:
         return None
     # Many bits are UVM=WO
     l = list()
-    if verbose or value != 0:	# show when enable is set
+    if mode.has(Reg.WRITE):	# show when enable is set
         l.append("endp={}".format(value & 0xf))
-    if verbose or value & 1 << 4:	
+    if mode.has(Reg.WRITE) or value & 1 << 4:
         l.append("enable")
-    if value & 1 << 5:
+    if mode.has(Reg.READ) or value & 1 << 5:
         l.append("effective_enable")
-    if verbose or value & 1 << 4 == 0:
-        l.append("endp-running")	# aka not-halted
-    s = ', '.join(l)
-    return "[{}] {}".format(
-        format_reg_halt(value),
-        s
-    )
+    if mode.has(Reg.WRITE):
+        if value & 1 << 4:
+            l.append("HALT")
+        else:
+            l.append("RUN")
+    nmenonic = "[{}]".format(format_reg_halt(value)) if(mode.has(Reg.READ, Reg.WRITE)) else ''
+    return nmenonic + ', '.join(l)
 
 
-def reg_config_desc(value: int, verbose: bool = False) -> str:
-    if not verbose and value == 0:
+def reg_config_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
+    if mode is Reg.NONE:
         return None
-    l = list()
-    if value & 1 << 0:
-        l.append("pullset_set")
-    if value & 1 << 1:
-        l.append("pullset_clear")
-    if value & 1 << 2:
-        l.append("interrupt_enable_set")
-    if value & 1 << 3:
-        l.append("interrupt_enable_clear")
-    s = ', '.join(l)
-    return "{}".format(
-        s
-    )
+    if mode.has(Reg.WRITE):
+        l = list()
+        if value & 1 << 0:
+            l.append("pullset_set")
+        if value & 1 << 1:
+            l.append("pullset_clear")
+        if value & 1 << 2:
+            l.append("interrupt_enable_set")
+        if value & 1 << 3:
+            l.append("interrupt_enable_clear")
+        return ', '.join(l)
+    return None
+
 
 # All bits are UVM=WO
-def reg_info_desc(value: int, verbose: bool = False) -> str:
-    if not verbose and value == 0:
+def reg_info_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
+    if mode is Reg.NONE:
         return None
-    l = list()
-    l.append("address=0x{:02x} {}".format(value & 0x7f, value & 0x7f))
-    if value & 1 << 8:
-        l.append("enable")
-    if value & 1 << 9:
-        l.append("trigger")
-    s = ', '.join(l)
-    return "{}".format(
-        s
-    )
+    if mode.has(Reg.WRITE):
+        l = list()
+        l.append("address=0x{:02x} {}".format(value & 0x7f, value & 0x7f))
+        if value & 1 << 8:
+            l.append("enable")
+        if value & 1 << 9:
+            l.append("trigger")
+        return ', '.join(l)
+    return None
 
 
 def reg_setup_desc(value: int, which: int, mode: Reg = Reg.DEFAULT) -> str:
@@ -209,6 +209,8 @@ def reg_endp_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
     if mode.has(Reg.READ, Reg.WRITE, Reg.DEFAULT):
         if value & 1 << 0:
             l.append("enable")
+        else:
+            l.append("disable")
         if value & 1 << 1:
             l.append("stall")
         if value & 1 << 2:
@@ -218,32 +220,49 @@ def reg_endp_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
         else:
             l.append("data_phase_0")
         head = (value >> 4) & 0xfff
-        l.append("head=0x{:x} @0x{}".format(head, head << 4))
+        l.append("head=0x{:x} @0x{:x}".format(head, head << 4))
         if value & 1 << 16:
             l.append("isochronous")
         mps = (value >> 22) & 0x3ff
-        l.append("max_packet_size=0x{:x} {}".format(mps, mps))
+        l.append("max_packet_size={} (0x{:x})".format(mps, mps))
     return ', '.join(l)
 
 
 def desc0_format(value: int, mode: Reg = Reg.DEFAULT) -> str:
     l = list()
     if mode.has(Reg.READ, Reg.WRITE, Reg.DEFAULT):
-        l.append("{:x}".format(value))	## FIXME
+        l.append("offset={:x}".format(value & 0xffff))
+        l.append("code={:x}".format((value >> 16) & 0xf))
+        if value & 0xfff00000 != 0:
+            l.append("unused={:x}".format((value >> 20) & 0xfff))
     return ', '.join(l)
 
 
 def desc1_format(value: int, mode: Reg = Reg.DEFAULT) -> str:
     l = list()
     if mode.has(Reg.READ, Reg.WRITE, Reg.DEFAULT):
-        l.append("{:x}".format(value))	## FIXME
+        l.append("next=0x{:x} @0x{:x}".format((value >> 4) & 0xfff, value & 0xfff0))
+        l.append("length={} (0x{:x})".format((value >> 16) & 0xffff, (value >> 16) & 0xffff))
+        if value & 0x0000000f != 0:
+            l.append("unused={:x}".format(value & 0xf))
     return ', '.join(l)
 
 
 def desc2_format(value: int, mode: Reg = Reg.DEFAULT) -> str:
     l = list()
     if mode.has(Reg.READ, Reg.WRITE, Reg.DEFAULT):
-        l.append("{:x}".format(value))	## FIXME
+        if value & 1 << 16:
+            l.append("IN")
+        else:
+            l.append("OUT")
+        if value & 1 << 17:
+            l.append("interrupt")
+        if value & 1 << 18:
+            l.append("completionOnFull")
+        if value & 1 << 19:
+            l.append("data1OnCompletion")
+        if value & 0xfff0ffff != 0:
+            l.append("unused={:x}".format(value & 0xfff0ffff))
     return ', '.join(l)
 
 
@@ -254,19 +273,18 @@ def addr_to_regname(addr: int) -> str:
 
 
 def addr_to_regdesc(addr: int, value: int, mode: Reg = Reg.ALL) -> str:
-    verbose = mode == Reg.ALL	## FIXME propagate
     if addr == REG_FRAME:
-        return reg_frame_desc(value, verbose)
+        return reg_frame_desc(value, mode)
     if addr == REG_ADDRESS:
         return reg_address_desc(value, mode)
     if addr == REG_INTERRUPT:
-        return reg_interrupt_desc(value, verbose)
+        return reg_interrupt_desc(value, mode)
     if addr == REG_HALT:
-        return reg_halt_desc(value, verbose)
+        return reg_halt_desc(value, mode)
     if addr == REG_CONFIG:
-        return reg_config_desc(value, verbose)
+        return reg_config_desc(value, mode)
     if addr == REG_INFO:
-        return reg_info_desc(value, verbose)
+        return reg_info_desc(value, mode)
     if addr == REG_SETUP0:
         return reg_setup_desc(value, 0, mode)
     if addr == REG_SETUP1:
@@ -491,7 +509,11 @@ __all__ = [
     'INTR_EP1',
     'INTR_EP2',
     'INTR_EP3',
+    'INTR_RESET',
     'INTR_EP0SETUP',
+    'INTR_SUSPEND',
+    'INTR_RESUME',
+    'INTR_DISCONNECT',
 
     'BUF_START',
 

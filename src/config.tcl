@@ -49,8 +49,10 @@ set ::env(DECAP_CELL) "\
 
 # clock
 set ::env(CLOCK_TREE_SYNTH) 1
-# period is in ns, so 20ns == 50mHz
+# period is in ns, so 20ns == 50MHz
 set ::env(CLOCK_PERIOD) "20"
+# period is in ns, so 10ns == 100MHz
+#set ::env(CLOCK_PERIOD) "10"
 set ::env(CLOCK_PORT) {clk}
 
 # hold/slack margin
@@ -66,3 +68,9 @@ set ::env(RT_MAX_LAYER) {met4}
 # FP_CORE_UTIL=50 is the default (will target 60% max util)
 # FP_CORE_UTIL=60 will adding +10% to default (70% max util)
 #set ::env(FP_CORE_UTIL) 60
+
+# 10 is default
+#set ::env(SYNTH_MAX_FANOUT) 7
+
+# H / W
+#set ::env(FP_ASPECT_RATIO) [expr 2/4]
