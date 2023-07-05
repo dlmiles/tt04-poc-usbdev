@@ -17,7 +17,12 @@
  * uo_out[7:0]  = OUTPUT all in use
  *
  */
-module tt04_to_wishbone (
+module tt04_to_wishbone #(
+    parameter	DATA_WIDTH	= 32,
+                ADDRESS_WIDTH	= 14,
+                ADDRESS_ALIGN	= 2,
+                SEL_WIDTH	= 4
+) (
     input			clk,
     input			rst_n,
     input			ena,
@@ -30,49 +35,45 @@ module tt04_to_wishbone (
     output		[7:0]	uio_oe,
 
     /* wishbone master interface presentation */
-    output			wb_CYC,
-    output			wb_STB,
-    input			wb_ACK,
-    output			wb_WE,
+    output					wb_CYC,
+    output					wb_STB,
+    input					wb_ACK,
+    output					wb_WE,
     /* wb_ADR - MSB 14-bits of 16-bits byte-address as we only support 32bit
      *          aligned access with the bottom 2 bits implicitly zero and
      *          is not represented in the width here.
      */
-    output		[13:0]  wb_ADR,
-    input		[31:0]  wb_DAT_MISO,
-    output		[31:0]  wb_DAT_MOSI,
+    output		[ADDRESS_WIDTH-1:0]	wb_ADR,
+    input		[DATA_WIDTH-1:0]	wb_DAT_MISO,
+    output		[DATA_WIDTH-1:0]	wb_DAT_MOSI,
     /* wb_SEL - We only support 32-bit aligned access.
      *          Use EXE_WBSEL to control this byte-write-mask.
      */
-    output		[3:0]   wb_SEL
+    output		[SEL_WIDTH-1:0]		wb_SEL
 );
 
     localparam UIO_OE_INPUT = `UIO_OE_INPUT;
     localparam UIO_OE_OUTPUT = `UIO_OE_OUTPUT;
+
+    localparam FULL_ADDRESS_WIDTH = ADDRESS_WIDTH + ADDRESS_ALIGN;
 
     // 3 bits of command word
     localparam CMD_IDLE  = 3'b000;
     localparam CMD_EXEC  = 3'b001;
     localparam CMD_AD0   = 3'b010;
     localparam CMD_AD1   = 3'b011;
-    localparam CMD_DO0   = 3'b100;
+    localparam CMD_DO0   = 3'b100;	// master data out (towards tt_um module)
     localparam CMD_DO3   = 3'b101;
-    localparam CMD_DI0   = 3'b110;
+    localparam CMD_DI0   = 3'b110;	// master data in (away from tt_um module)
     localparam CMD_DI3   = 3'b111;
 
-    reg [13:0] ADR;
-    reg [31:0] DO;
-    reg [31:0] DI;
-    reg [3:0] SEL;
+    reg [FULL_ADDRESS_WIDTH-1:0] ADR;	// expecting bottom 2 bits to be dropped by flow as output not connected
+    reg [DATA_WIDTH-1:0] DO;
+    reg [DATA_WIDTH-1:0] DI;
+    reg [SEL_WIDTH-1:0] SEL;
     reg CYC;
     reg STB;	// aka bus active
     reg WE;
-
-`ifndef SYNTHESIS
-    // This exists only to allow easier debugging of wave
-    wire [15:0] ADR_debug;
-    assign ADR_debug = {ADR[13:0],2'b00};
-`endif
 
     wire [2:0] cmd;
     assign cmd = uio_in[7:5];
@@ -156,6 +157,7 @@ module tt04_to_wishbone (
             end
             EXE_WBSEL  : begin
                 SEL <= in8[7:4];
+                issue <= 0;
             end
             EXE_ENABLE  : begin
                 CYC <= 1;
@@ -182,10 +184,10 @@ module tt04_to_wishbone (
             end
             default  : ;
             endcase
-        end else if (!do_idle) begin
+        end else begin
             issue <= 0;
         end
-        // We'll add STB here just in case a bad WB module flashes wb_ACK at us
+        // We'll add STB with wb_ACK here just in case a bad WB module flashes wb_ACK at us
         if (STB && wb_ACK) begin
             WE <= 0;
             DI <= wb_DAT_MISO;
@@ -334,9 +336,9 @@ module tt04_to_wishbone (
     assign wb_CYC = CYC;
     assign wb_STB = STB;
     assign wb_WE = WE;
-    assign wb_SEL[3:0] = WE ? SEL : 4'b0000;
-    assign wb_ADR[13:0] = ADR;
-    assign wb_DAT_MOSI[31:0] = DO;
+    assign wb_SEL[SEL_WIDTH-1:0] = WE ? SEL : {SEL_WIDTH{1'b0}};
+    assign wb_ADR[ADDRESS_WIDTH-1:0] = ADR[FULL_ADDRESS_WIDTH-1:ADDRESS_ALIGN];
+    assign wb_DAT_MOSI[DATA_WIDTH-1:0] = DO;
 
     always @(posedge clk) begin
         if (reset) begin

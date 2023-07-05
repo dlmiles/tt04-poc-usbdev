@@ -18,10 +18,11 @@ CMD_IDLE   = 0x00
 CMD_EXEC   = 0x20
 CMD_AD0    = 0x40
 CMD_AD1    = 0x60
-CMD_DO0    = 0x80
+CMD_DO0    = 0x80	# master data out (towards tt_um module)
 CMD_DO3    = 0xa0
-CMD_DI0    = 0xc0
+CMD_DI0    = 0xc0	# master data in (away from tt_um module)
 CMD_DI3    = 0xe0
+CMD_MASK   = 0xe0	# bit5..7 all set
 
 EXE_RESET   = 0x01
 EXE_WBSEL   = 0x02
@@ -29,16 +30,41 @@ EXE_DISABLE = 0x04
 EXE_ENABLE  = 0x05
 EXE_READ    = 0x06
 EXE_WRITE   = 0x07
+EXE_MASK    = 0x07
+
+ACK_BITID = 4
 
 MIN_ADDRESS = 0x0000
 MAX_ADDRESS = 0xffff
 
+ADR_WIDTH = 16
+ADR_BUS_WIDTH = 14
+
+ADR_SHIFT_COUNT = ADR_WIDTH - ADR_BUS_WIDTH # 2
+ADR_ALIGN_WIDTH = 2**ADR_SHIFT_COUNT # 4
+ADR_MASK = (2**ADR_WIDTH)-1 # 0xffff
+ADR_ZERO_MASK = (2**ADR_SHIFT_COUNT)-1 # 0x0003
+ADR_USED_MASK = ADR_MASK & ~ADR_ZERO_MASK # 0xfffc
+ADR_SHIFTED_MASK = ADR_USED_MASK >> ADR_SHIFT_COUNT # 0x3fff
+
 MAX_CYCLES  = 100000
+
+
+assert ADR_SHIFT_COUNT == 2
+assert ADR_ALIGN_WIDTH == 4
+assert ADR_MASK == 0xffff
+assert ADR_ZERO_MASK == 0x0003
+assert ADR_USED_MASK == 0xfffc
+assert ADR_SHIFTED_MASK == 0x3fff
 
 
 class TT2WB():
     dut = None
     enable = False
+    addr = None
+    data = None
+    need_issue = False
+    force_default = False
     ADDR_DESC = {
         # Here you can create a dict name for address location to help diagnostics in logs
         # There is also the 'format' Callable mechanism
@@ -91,23 +117,46 @@ class TT2WB():
         return "{:04x}".format(addr)
 
     def addr_to_bus(self, addr: int) -> int:
-        assert addr & ~0xffff == 0, f"addr is {addr:04x} is out of range 16-bit"
-        assert addr % 4 == 0, f"addr is {addr:04x} is not modulus 4"
-        return addr >> 2
+        assert addr & ~ADR_MASK == 0, f"addr is {addr:04x} is out of range {ADR_WIDTH}-bit"
+        assert addr % ADR_ALIGN_WIDTH == 0, f"addr is {addr:04x} is not modulus {ADR_ALIGN_WIDTH}"
+        return addr >> ADR_SHIFT_COUNT
 
-    def addr_translate(self, addr: int) -> int:
-        assert addr & ~0x3fff == 0, f"addr is {addr:04x} is out of range 14-bit"
-        return addr << 2
+    def addr_translate(self, busaddr: int) -> int:
+        assert busaddr & ~ADR_SHIFTED_MASK == 0, f"addr is {busaddr:04x} is out of range {ADR_BUS_WIDTH}-bit"
+        return busaddr << ADR_SHIFT_COUNT
 
-    def check_address(self, addr: int) -> int:
-        assert(addr % 4 == 0), f"TT2WB address {addr} {addr:04x} is not modulus 4 aligned"
-        assert(addr >= self.MIN_ADDRESS), f"TT2WB address {addr} {addr:04x} is out of range, MIN_ADDRESS={self.MIN_ADDRESS}"
-        assert(addr <= self.MAX_ADDRESS), f"TT2WB address {addr} {addr:04x} is out of range, MAX_ADDRESS={self.MAX_ADDRESS}"
-        return addr
+    def check_address(self, addr: int) -> None:
+        assert addr is not None, f"TT2WB address = {addr}"
+        assert addr % ADR_ALIGN_WIDTH == 0, f"TT2WB address {addr} {addr:04x} is not modulus {ADR_ALIGN_WIDTH} aligned"
+        assert addr >= self.MIN_ADDRESS, f"TT2WB address {addr} {addr:04x} is out of range, MIN_ADDRESS={self.MIN_ADDRESS}"
+        assert addr <= self.MAX_ADDRESS, f"TT2WB address {addr} {addr:04x} is out of range, MAX_ADDRESS={self.MAX_ADDRESS}"
 
     def check_enable(self) -> None:
-        assert(self.enable), f"TT2WB hardware not in enable state for this operation, use tt2wb.exe_enable()"
+        assert self.enable, f"TT2WB hardware not in enable state for this operation, use tt2wb.exe_enable()"
         return None
+
+    def addr_align(self, addr: int) -> int:
+        return addr & ADR_USED_MASK
+
+    def resolve_addr(self, addr: int = None) -> int:
+        if addr is None:
+            addr = self.addr
+        assert addr is not None, f"TT2WB addr = {addr}"
+        return addr
+
+    def resolve_data(self, data: int = None) -> int:
+        if data is None:
+            data = self.data
+        assert data is not None, f"TT2WB data = {data}"
+        return data
+
+    def update_need_issue(self, uio_in: int, ui_in: int) -> bool:
+        if uio_in is not None and ui_in is not None:
+            cmd = uio_in & CMD_MASK
+            exe = ui_in & EXE_MASK
+            newval = cmd == CMD_EXEC and (exe == EXE_READ or exe == EXE_WRITE)
+            self.need_issue = newval
+        return self.need_issue
 
     async def send(self, uio_in: int, ui_in: int, save_restore: bool = False) -> None:
         if save_restore:
@@ -120,6 +169,9 @@ class TT2WB():
 
         if save_restore:
             self.restore()
+
+        self.update_need_issue(uio_in, ui_in)
+
         return None
 
     async def recv(self, uio_in: int = None, ui_in: int = None, pipeline: bool = False) -> int:
@@ -134,7 +186,13 @@ class TT2WB():
 
         if not pipeline:
             await ClockCycles(self.dut.clk, 1)
+
+        self.update_need_issue(uio_in, ui_in)
+
         return data
+
+    def is_ack(self) -> bool:
+        return extract_bit(self.dut.dut.uio_out.value, ACK_BITID)
 
     async def wb_ACK_wait(self, cycles: int = None, can_raise: bool = True) -> bool:
         if cycles is None:
@@ -142,7 +200,7 @@ class TT2WB():
 
         #print("wb_ACK_wait cycles={}".format(cycles))
         for i in range(0, cycles):
-            if extract_bit(self.dut.dut.uio_out.value, 4):
+            if self.is_ack():
                 self.dut._log.debug("WB_ACK cycles={} {}".format(i, True))
                 return True
             await ClockCycles(self.dut.clk, 1)
@@ -151,7 +209,7 @@ class TT2WB():
             raise Exception(f"TT2WB no wb_ACK received after {cycles} cycles")
         return False
 
-    async def idle(self) -> None:
+    async def exe_idle(self) -> None:
         await self.send(CMD_IDLE, 0)
 
     async def exe_reset(self) -> None:
@@ -161,7 +219,6 @@ class TT2WB():
     async def exe_wbsel(self, sel: int = 0xf) -> None:
         assert sel & ~0xf == 0, f"sel = 0x{sel:x} is not inside valid 4-bit range"
         await self.send(CMD_EXEC, (sel << 4) | EXE_WBSEL)
-        self.enable = False
 
     async def exe_enable(self) -> None:
         await self.send(CMD_EXEC, EXE_ENABLE)
@@ -171,15 +228,48 @@ class TT2WB():
         await self.send(CMD_EXEC, EXE_DISABLE)
         self.enable = False
 
-    async def exe_read_BinaryValue(self, addr: int) -> tuple:
+    async def cmd_addr(self, addr: int, force: bool = False) -> bool:
+        self.check_address(addr)
+        # If the internal ADR state is already setup to 'addr' then we can
+        #  suppress using he cycles to send instruction to change it
+        if force or self.addr is None or self.addr != addr:
+            await self.send(CMD_AD0, addr & 0xff)
+            await self.send(CMD_AD1, (addr >> 8) & 0xff)
+            self.addr = addr
+            return True
+
+        return False
+
+    async def cmd_data(self, data: int, force: bool = False) -> bool:
+        assert data is not None, f"data = {data}"
+        if force or self.data is None or self.data != data:
+            d = data
+            for i in range(0, 4):
+                # FIXME This assumes the last command wasn't a CMD_DO0, needs detection and assert
+                # caller can use exe_enable() before ?
+                await self.send(CMD_DO0, d & 0xff)
+                d = d >> 8
+            self.data = data
+            return True
+
+        return False
+
+    async def exe_read_BinaryValue(self, addr: int = None) -> tuple:
         self.check_enable()
-        addr = self.check_address(addr)
-        await self.send(CMD_AD0, self.addr_to_bus(addr) & 0xff)
-        await self.send(CMD_AD1, (self.addr_to_bus(addr) >> 8) & 0xff)
+
+        if addr is not None:
+            await self.cmd_addr(addr, self.force_default)
+        addr = self.resolve_addr(addr)
+
+        if self.need_issue:	# insert extra CMD to reset issue=0 in tt2wb hardware
+            print("exe_read_BinaryValue({}) need_issue={} invoking send(CMD_EXEC, EXE_ENABLE)".format(addr, self.need_issue))
+            await self.send(CMD_EXEC, EXE_ENABLE)
+
         await self.send(CMD_EXEC, EXE_READ)
         self.dut._log.debug("WB_READ  0x{:04x}".format(addr))
 
         if not await self.wb_ACK_wait():
+            # need_issue mechanism takes care with deferring the reset of issue=0
             return None
 
         # This is a pipelined sequential read
@@ -206,9 +296,12 @@ class TT2WB():
         return (d32, d0, d1, d2, d3)
 
 
-    async def exe_read(self, addr: int, format: Callable[[int,int], str] = None) -> int:
+    async def exe_read(self, addr: int = None, format: Callable[[int,int], str] = None) -> int:
         self.check_enable()
+
         (d32, d0, d1, d2, d3) = await self.exe_read_BinaryValue(addr)
+
+        addr = self.resolve_addr(addr)
 
         if d0.is_resolvable and d1.is_resolvable and d2.is_resolvable and d3.is_resolvable:
             data = (d3 << 24) | (d2 << 16) | (d1 << 8) | d0
@@ -222,16 +315,21 @@ class TT2WB():
         return None
 
 
-    async def exe_write(self, addr: int, data: int, format: Callable[[int,int], str] = None) -> bool:
+    async def exe_write(self, data: int = None, addr: int = None, format: Callable[[int,int], str] = None) -> bool:
         self.check_enable()
-        addr = self.check_address(addr)
 
-        await self.send(CMD_AD0, self.addr_to_bus(addr) & 0xff)
-        await self.send(CMD_AD1, (self.addr_to_bus(addr) >> 8) & 0xff)
-        d = data
-        for i in range(0, 4):
-            await self.send(CMD_DO0, d & 0xff)
-            d = d >> 8
+        if addr is not None:
+            await self.cmd_addr(addr, self.force_default)
+        addr = self.resolve_addr(addr)
+
+        if data is not None:
+            await self.cmd_data(data, self.force_default)
+        data = self.resolve_data(data)
+
+        if self.need_issue:	# insert extra CMD to reset issue=0 in tt2wb hardware
+            print("exe_write(data={}, addr={}) need_issue={} invoking send(CMD_EXEC, EXE_ENABLE)".format(data, addr, self.need_issue))
+            await self.send(CMD_EXEC, EXE_ENABLE)
+
         await self.send(CMD_EXEC, EXE_WRITE)
         self.dut._log.debug("WB_WRITE {}".format(self.addr_desc(addr)))
 
@@ -245,16 +343,18 @@ class TT2WB():
         return ack
 
 
-    async def wb_read_BinaryValue(self, addr: int) -> tuple:
+    async def wb_read_BinaryValue(self, addr: int = None) -> tuple:
         return await self.exe_read_BinaryValue(addr)
 
-    async def wb_read(self, addr: int, format: Callable[[int,int], str] = None) -> int:
+    async def wb_read(self, addr: int = None, format: Callable[[int,int], str] = None) -> int:
         return await self.exe_read(addr, format)
 
+    # FIXME change argument order  data, addr, format
     async def wb_write(self, addr: int, data: int, format: Callable[[int,int], str] = None) -> bool:
-        return await self.exe_write(addr, data, format)
+        return await self.exe_write(data, addr, format)
 
     def reg_dump(self, addr: int, value: int, pfx: str = '') -> None:
+        self.check_address(addr)
         regname = addr_to_regname(addr)
         if regname:
             regdesc = addr_to_regdesc(addr, value)
@@ -263,8 +363,9 @@ class TT2WB():
 
     async def wb_dump(self, addr: int, count: int) -> int:
         self.check_enable()
-        addr = self.check_address(addr)
-        assert count % 4 == 0, f"count = {count} not aligned to modulus 4"
+        self.check_address(addr)
+
+        assert count % ADR_ALIGN_WIDTH == 0, f"count = {count} not aligned to modulus {ADR_ALIGN_WIDTH}"
         offset = 0
         left = count
         while left > 0:
@@ -274,16 +375,16 @@ class TT2WB():
             s2 = chr(d2) if(d2.is_resolvable and chr(d2.integer).isprintable()) else '.'
             s3 = chr(d3) if(d3.is_resolvable and chr(d3.integer).isprintable()) else '.'
             data = "0x{:08x}".format(d32.integer) if(d32.is_resolvable) else '0x????????'
-            offstr = "+0x{:04x}".format(offset) if(addr != offset and count > 4) else ''
+            offstr = "+0x{:04x}".format(offset) if(addr != offset and count > ADR_ALIGN_WIDTH) else ''
             regname = addr_to_regname(addr)
-            if regname and count == 4:
+            if regname and count == ADR_ALIGN_WIDTH:
                 offstr = " {:13s}".format(regname)
             self.dut._log.info("WB_DUMP  @{}{} = {}  b{} {} {} {}  {}  {}{}{}{}".format(self.addr_desc(addr), offstr, data, d3, d2, d1, d0, d32, s0, s1, s2, s3))
             if d32.is_resolvable:
                 self.reg_dump(addr, d32.integer, 'WB_DUMP ')
-            left -= 4
-            addr += 4
-            offset += 4
+            left -= ADR_ALIGN_WIDTH
+            addr += ADR_ALIGN_WIDTH
+            offset += ADR_ALIGN_WIDTH
         return count
 
 
