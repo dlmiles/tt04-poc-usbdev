@@ -2022,9 +2022,9 @@ module UsbDeviceCtrl (
   wire                when_UsbDataRxFsm_l80;
   wire                when_UsbDataRxFsm_l89;
   wire                when_UsbDataRxFsm_l95;
-  wire                when_UsbDataRxFsm_l107;
+  wire                when_UsbDataRxFsm_l109;
   wire                when_StateMachine_l253;
-  wire                when_UsbDataRxFsm_l114;
+  wire                when_UsbDataRxFsm_l116;
   reg        [2:0]    dataTx_stateReg;
   reg        [2:0]    dataTx_stateNext;
   reg        [2:0]    token_stateReg;
@@ -2057,16 +2057,16 @@ module UsbDeviceCtrl (
   wire                when_UsbDeviceCtrl_l625;
   wire                when_UsbDeviceCtrl_l631;
   wire                when_UsbDeviceCtrl_l699;
-  wire                when_UsbDeviceCtrl_l700;
-  wire                when_UsbDeviceCtrl_l749;
-  wire                when_UsbDeviceCtrl_l750;
-  wire                when_UsbDeviceCtrl_l755;
+  wire                when_UsbDeviceCtrl_l708;
+  wire                when_UsbDeviceCtrl_l757;
+  wire                when_UsbDeviceCtrl_l759;
+  wire                when_UsbDeviceCtrl_l764;
   wire                when_StateMachine_l253_1;
   wire                when_StateMachine_l253_2;
   wire                when_StateMachine_l253_3;
   reg        [2:0]    main_stateReg;
   reg        [2:0]    main_stateNext;
-  wire                when_UsbDeviceCtrl_l784;
+  wire                when_UsbDeviceCtrl_l793;
   wire                when_StateMachine_l253_4;
   wire                when_StateMachine_l253_5;
   `ifndef SYNTHESIS
@@ -2943,7 +2943,7 @@ module UsbDeviceCtrl (
           if(desc_data1OnCompletion) begin
             memory_internal_writeCmd_payload_data[3] = 1'b1;
           end
-          if(when_UsbDeviceCtrl_l755) begin
+          if(when_UsbDeviceCtrl_l764) begin
             memory_internal_writeCmd_payload_data[15 : 4] = 12'h000;
           end
         end
@@ -3318,7 +3318,7 @@ module UsbDeviceCtrl (
       dataRx_enumDef_DATA : begin
         if(!when_UsbDataRxFsm_l89) begin
           if(io_phy_rx_flow_valid) begin
-            if(when_UsbDataRxFsm_l107) begin
+            if(when_UsbDataRxFsm_l109) begin
               dataRx_data_valid = 1'b1;
             end
           end
@@ -4104,9 +4104,9 @@ module UsbDeviceCtrl (
   assign when_UsbDataRxFsm_l80 = (! io_phy_rx_active);
   assign when_UsbDataRxFsm_l89 = (! io_phy_rx_active);
   assign when_UsbDataRxFsm_l95 = ((&dataRx_valids) && (! dataRx_crc16rx_io_crcError));
-  assign when_UsbDataRxFsm_l107 = (&dataRx_valids);
+  assign when_UsbDataRxFsm_l109 = (&dataRx_valids);
   assign when_StateMachine_l253 = ((! (dataRx_stateReg == dataRx_enumDef_IDLE)) && (dataRx_stateNext == dataRx_enumDef_IDLE));
-  assign when_UsbDataRxFsm_l114 = (! (dataRx_stateReg == dataRx_enumDef_BOOT));
+  assign when_UsbDataRxFsm_l116 = (! (dataRx_stateReg == dataRx_enumDef_BOOT));
   always @(*) begin
     dataTx_stateNext = dataTx_stateReg;
     case(dataTx_stateReg)
@@ -4431,10 +4431,10 @@ module UsbDeviceCtrl (
   assign when_UsbDeviceCtrl_l625 = (rxTimer_timeout || ((! io_phy_rx_active) && io_phy_rx_active_regNext));
   assign when_UsbDeviceCtrl_l631 = (! io_phy_rx_active);
   assign when_UsbDeviceCtrl_l699 = (! token_isSetup);
-  assign when_UsbDeviceCtrl_l700 = ((! byteCounter_full) || (desc_completionOnFull && desc_full));
-  assign when_UsbDeviceCtrl_l749 = (token_endpoint == 4'b0000);
-  assign when_UsbDeviceCtrl_l750 = (regs_address_trigger && token_isIn);
-  assign when_UsbDeviceCtrl_l755 = (! desc_full);
+  assign when_UsbDeviceCtrl_l708 = ((! active_dataRxOverrun) || (desc_completionOnFull && desc_full));
+  assign when_UsbDeviceCtrl_l757 = (token_endpoint == 4'b0000);
+  assign when_UsbDeviceCtrl_l759 = (regs_address_trigger && token_isIn);
+  assign when_UsbDeviceCtrl_l764 = (! desc_full);
   assign when_StateMachine_l253_1 = ((! (active_stateReg == active_enumDef_TOKEN)) && (active_stateNext == active_enumDef_TOKEN));
   assign when_StateMachine_l253_2 = ((! (active_stateReg == active_enumDef_DATA_RX)) && (active_stateNext == active_enumDef_DATA_RX));
   assign when_StateMachine_l253_3 = ((! (active_stateReg == active_enumDef_HANDSHAKE_RX_0)) && (active_stateNext == active_enumDef_HANDSHAKE_RX_0));
@@ -4452,7 +4452,7 @@ module UsbDeviceCtrl (
         end
       end
       main_enumDef_ACTIVE_INIT : begin
-        if(when_UsbDeviceCtrl_l784) begin
+        if(when_UsbDeviceCtrl_l793) begin
           main_stateNext = main_enumDef_ACTIVE;
         end
       end
@@ -4472,7 +4472,7 @@ module UsbDeviceCtrl (
     end
   end
 
-  assign when_UsbDeviceCtrl_l784 = (! io_phy_reset);
+  assign when_UsbDeviceCtrl_l793 = (! io_phy_reset);
   assign when_StateMachine_l253_4 = ((! (main_stateReg == main_enumDef_ACTIVE_INIT)) && (main_stateNext == main_enumDef_ACTIVE_INIT));
   assign when_StateMachine_l253_5 = ((! (main_stateReg == main_enumDef_ACTIVE)) && (main_stateNext == main_enumDef_ACTIVE));
   always @(posedge ctrlCd_clk or posedge ctrlCd_reset) begin
@@ -4703,8 +4703,8 @@ module UsbDeviceCtrl (
             if(desc_interrupt) begin
               regs_interrupts_endpoints[_zz_regs_interrupts_endpoints] <= 1'b1;
             end
-            if(when_UsbDeviceCtrl_l749) begin
-              if(when_UsbDeviceCtrl_l750) begin
+            if(when_UsbDeviceCtrl_l757) begin
+              if(when_UsbDeviceCtrl_l759) begin
                 regs_address_enable <= 1'b1;
               end
               regs_address_trigger <= 1'b0;
@@ -4827,7 +4827,7 @@ module UsbDeviceCtrl (
       dataRx_pidError <= 1'b0;
       dataRx_crcError <= 1'b1;
     end
-    if(when_UsbDataRxFsm_l114) begin
+    if(when_UsbDataRxFsm_l116) begin
       if(io_phy_rx_flow_valid) begin
         if(io_phy_rx_stuffingError) begin
           dataRx_stuffingError <= 1'b1;
@@ -4963,7 +4963,7 @@ module UsbDeviceCtrl (
       end
       active_enumDef_UPDATE_SETUP : begin
         if(when_UsbDeviceCtrl_l699) begin
-          if(when_UsbDeviceCtrl_l700) begin
+          if(when_UsbDeviceCtrl_l708) begin
             active_completion <= 1'b1;
           end
         end
