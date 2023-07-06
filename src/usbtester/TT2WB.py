@@ -1,7 +1,7 @@
 #
 #
 #
-#  Cocotb helper for the tt03_to_wishbone.v module
+#  Cocotb helper for the tt04_to_wishbone.v module
 #
 #
 from typing import Callable
@@ -262,7 +262,7 @@ class TT2WB():
         addr = self.resolve_addr(addr)
 
         if self.need_issue:	# insert extra CMD to reset issue=0 in tt2wb hardware
-            print("exe_read_BinaryValue({}) need_issue={} invoking send(CMD_EXEC, EXE_ENABLE)".format(addr, self.need_issue))
+            #print("exe_read_BinaryValue({}) need_issue={} invoking send(CMD_EXEC, EXE_ENABLE)".format(addr, self.need_issue))
             await self.send(CMD_EXEC, EXE_ENABLE)
 
         await self.send(CMD_EXEC, EXE_READ)
@@ -327,7 +327,7 @@ class TT2WB():
         data = self.resolve_data(data)
 
         if self.need_issue:	# insert extra CMD to reset issue=0 in tt2wb hardware
-            print("exe_write(data={}, addr={}) need_issue={} invoking send(CMD_EXEC, EXE_ENABLE)".format(data, addr, self.need_issue))
+            #print("exe_write(data={}, addr={}) need_issue={} invoking send(CMD_EXEC, EXE_ENABLE)".format(data, addr, self.need_issue))
             await self.send(CMD_EXEC, EXE_ENABLE)
 
         await self.send(CMD_EXEC, EXE_WRITE)

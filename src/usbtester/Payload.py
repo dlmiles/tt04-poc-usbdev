@@ -15,7 +15,7 @@ class Payload():
         self.data = data
 
     def __len__(self):
-        print("Payload.len() = {}".format(len(self.data)))
+        #print("Payload.len() = {}".format(len(self.data)))
         return len(self.data)
 
     class iterator():
@@ -30,14 +30,14 @@ class Payload():
         def __next__(self):
             if self.index < len(self.data):
                 v = self.data[self.index]
-                print("Payload.next() = {}/{} value={:02x}".format(self.index, len(self.data), v))
+                #print("Payload.next() = {}/{} value={:02x}".format(self.index, len(self.data), v))
                 self.index += 1
                 return v
-            print("Payload.next() = {}/{} STOP".format(self.index, len(self.data)))
+            #print("Payload.next() = {}/{} STOP".format(self.index, len(self.data)))
             raise StopIteration()
 
     def __iter__(self):
-        print("Payload.iter() = {}".format(len(self.data)))
+        #print("Payload.iter() = {}".format(len(self.data)))
         return Payload.iterator(self.data)
     
 
@@ -55,7 +55,7 @@ class Payload():
             bytes.append((v >>  8) & 0xff)
             bytes.append((v >> 16) & 0xff)
             bytes.append((v >> 24) & 0xff)
-        print("int32() = {}".format(bytes))
+        #print("int32() = {}".format(bytes))
         return Payload(bytes)
 
 

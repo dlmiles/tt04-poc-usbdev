@@ -166,12 +166,12 @@ def binary_value_bit(bv: BinaryValue, bitid: int, value: Any = None, mapper: Cal
         else:
             bitstr = str(value)
         nvstr = msb + bitstr + lsb
-        print("binary_value_bit {} {} {} {} SET {} {} => {}".format(value, bitid, s, dbg2, value, bitstr, nvstr))
+        #print("binary_value_bit {} {} {} {} SET {} {} => {}".format(value, bitid, s, dbg2, value, bitstr, nvstr))
         assert len(s) == len(nvstr)
         nv = BinaryValue(nvstr, n_bits=bv.n_bits)
         assert nv.n_bits == bv.n_bits
     else:
-        print("binary_value_bit {} {} {} {} GET".format(value, bitid, s, dbg2))
+        #print("binary_value_bit {} {} {} {} GET".format(value, bitid, s, dbg2))
         nv = bv
 
     if mapper:
@@ -184,7 +184,7 @@ def extract_bit(v, bitid: int) -> bool:
     assert(bitid >= 0)
     if isinstance(v, cocotb.handle.NonHierarchyObject):
         v = v.value
-    assert isinstance(v, BinaryValue) or isinstance(v, int) or isinstance(v, bool)
+    assert isinstance(v, BinaryValue) or isinstance(v, int) or isinstance(v, bool), f"extract_bit() value not a supported type: {type(v)}"
     if type(v) is int:
         v = BinaryValue(v, n_bits=v.bit_length())
     if type(v) is bool:
@@ -192,12 +192,6 @@ def extract_bit(v, bitid: int) -> bool:
     if type(v) is BinaryValue:
         (nbv, mv, sv) = binary_value_bit(v, bitid)
         return mv
-        #s = v.binstr
-        #if bitid+1 > v.n_bits:
-        #    raise Exception(f"{bitid+1} > {v.n_bits} from {v}")
-        #p = s[-(bitid+1)]
-        ##print("extract_bit {} {} {} {} {} p={}".format(v, s, s[-(bitid+2)], s[-(bitid+1)], s[-(bitid)], p))
-        #return True if(p == '1') else False
     raise Exception(f"type(v) is not a type we understand: {type(v)}")
 
 

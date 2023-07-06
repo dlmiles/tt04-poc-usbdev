@@ -1042,26 +1042,36 @@ async def test_usbdev(dut):
     ### FIXME test the ctrl/phy clocks can both be 48MHz, then try slower/faster/much-faster ctrl clocks
 
     ####
+    #### Never seen a SOF frame since reset so
+    ####
+
+    debug(dut, '800_SOF_frameValid_0')
+
+    data = await ttwb.wb_read_BinaryValue(REG_FRAME)	# 12'b0xxxxxxxxxxx
+    assert extract_bit(data[0], 12) == False, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=0"
+
+    ####
     #### SOF token with frame 0
     ####
 
-    debug(dut, '800_SOF_0000')
+    debug(dut, '810_SOF_0000')
 
     frame = 0
-    data = await ttwb.wb_read(REG_FRAME, regrd)	# 11'bxxxxxxxxxxx
+    data = await ttwb.wb_read(REG_FRAME, regrd)	# 12'b0xxxxxxxxxxx
     await usb.send_sof(frame=frame)
     await usb.send_idle()
     data = await ttwb.wb_read(REG_FRAME, regrd)
     assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
+    assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
 
-    debug(dut, '801_SOF_0000_END')
+    debug(dut, '811_SOF_0000_END')
     await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
     ####
     #### SOF token with frame 1
     ####
 
-    debug(dut, '810_SOF_0001')
+    debug(dut, '820_SOF_0001')
 
     frame = 1
     data = await ttwb.wb_read(REG_FRAME, regrd)
@@ -1069,15 +1079,16 @@ async def test_usbdev(dut):
     await usb.send_idle()
     data = await ttwb.wb_read(REG_FRAME, regrd)
     assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
+    assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
 
-    debug(dut, '811_SOF_0001_END')
+    debug(dut, '821_SOF_0001_END')
     await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
     ####
     #### SOF token with frame 2047
     ####
 
-    debug(dut, '820_SOF_2047')
+    debug(dut, '830_SOF_2047')
 
     frame = 2047
     data = await ttwb.wb_read(REG_FRAME, regrd)
@@ -1085,8 +1096,9 @@ async def test_usbdev(dut):
     await usb.send_idle()
     data = await ttwb.wb_read(REG_FRAME, regrd)
     assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
+    assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
 
-    debug(dut, '821_SOF_2047_END')
+    debug(dut, '831_SOF_2047_END')
     #await ClockCycles(dut.clk, TICKS_PER_BIT*32)
     # minimal delay, confirm back-to-back decoding works
 
@@ -1094,7 +1106,7 @@ async def test_usbdev(dut):
     #### SOF token with frame 42
     ####
 
-    debug(dut, '830_SOF_0042')
+    debug(dut, '840_SOF_0042')
 
     frame = 42
     data = await ttwb.wb_read(REG_FRAME, regrd)
@@ -1102,8 +1114,9 @@ async def test_usbdev(dut):
     await usb.send_idle()
     data = await ttwb.wb_read(REG_FRAME, regrd)
     assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
+    assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
 
-    debug(dut, '831_SOF_0042_END')
+    debug(dut, '841_SOF_0042_END')
     await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
 
