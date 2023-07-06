@@ -8,8 +8,8 @@ from enum import IntEnum
 
 # FIXME auto-configure
 EP_COUNT = 4
-ADDRESS_LENGTH = 84
-MAX_PACKET_LENGTH = 40
+ADDRESS_LENGTH = 96 # 84
+MAX_PACKET_LENGTH = 52 # 40
 
 
 # Control Registers
