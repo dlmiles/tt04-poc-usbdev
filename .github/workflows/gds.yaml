@@ -16,22 +16,11 @@ jobs:
       - name: patch
         run: |
           cd src
-          cp UsbDeviceTop.v UsbDeviceTop.v.gds_orig
           # Temporary patch remove before production and signoff
           # For local simulation these timers values are 1/200th of the normal time
           # This patch restores the production values to meet USB specification
 
-          # FS
-          sed -e "s#rx_timerLong_counter == 23'h0012a7#rx_timerLong_counter == 23'h0e933f#" -i UsbDeviceTop.v
-          sed -e "s#rx_timerLong_counter == 23'h000947#rx_timerLong_counter == 23'h07403f#" -i UsbDeviceTop.v
-          sed -e "s#rx_timerLong_counter == 23'h0002b7#rx_timerLong_counter == 23'h021fbf#" -i UsbDeviceTop.v
-          # LS
-          sed -e "s#rx_timerLong_counter == 23'h00953f#rx_timerLong_counter == 23'h0e933f#" -i UsbDeviceTop.v
-          sed -e "s#rx_timerLong_counter == 23'h004a3f#rx_timerLong_counter == 23'h07403f#" -i UsbDeviceTop.v
-          sed -e "s#rx_timerLong_counter == 23'h0015bf#rx_timerLong_counter == 23'h021fbf#" -i UsbDeviceTop.v
-
-          diff -u UsbDeviceTop.v.gds_orig UsbDeviceTop.v || true
-
+          ./check_verilog_timerconsts.sh patch quiet
           # This now validates for production by default
           ./check_verilog_timerconsts.sh
 
