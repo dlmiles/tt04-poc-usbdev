@@ -16,12 +16,18 @@ jobs:
       - name: patch
         run: |
           cd src
-          # Temporary patch remove before production and signoff
-          # For local simulation these timers values are 1/200th of the normal time
-          # This patch restores the production values to meet USB specification
+
+          ./check_verilog_timerconsts.sh || true
+
+          echo "### Temporary patch remove before production and signoff"
+          echo "### For local simulation these timers values are 1/200th or 1/25th of the normal wall-clock time"
+          echo "### This patch restores the production values to meet USB specification with a 48MHz PHY clock source"
 
           ./check_verilog_timerconsts.sh patch quiet
-          # This now validates for production by default
+
+          echo ""
+          echo "### This now validates the values inside verilog are production system values or halts the CI"
+
           ./check_verilog_timerconsts.sh
 
       - name: Build GDS

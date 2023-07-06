@@ -25,22 +25,49 @@ jobs:
     - name: patch
       run: |
         cd src
-        # Temporary patch remove before production and signoff
-        # For local simulation these timers values are 1/200th of the normal time
-        # This patch restores the production values to meet USB specification
+
+        ./check_verilog_timerconsts.sh || true
+
+        echo "### Temporary patch remove before production and signoff"
+        echo "### For local simulation these timers values are 1/200th or 1/25th of the normal wall-clock time"
+        echo "### This patch restores the production values to meet USB specification with a 48MHz PHY clock source"
 
         ./check_verilog_timerconsts.sh patch quiet
-        # This now validates for production by default
+
+        echo ""
+        echo "### This now validates the values inside verilog are production system values or halts the CI"
+
         ./check_verilog_timerconsts.sh
 
-    - name: test
+    - name: test FULL_SPEED
       run: |
-        export DEBUG=true
         cd src
+
+        export DEBUG=true
+        unset LOW_SPEED
         make clean
         make
+
+        mv results.xml results_fs.xml
+        mv tb.vcd tb_fs.vcd
+
         # make will return success even if the test fails, so check for failure in the results.xml
-        ! grep failure results.xml
+        ! grep failure results_fs.xml
+
+    - name: test LOW_SPEED
+      run: |
+        cd src
+
+        export DEBUG=true
+        export LOW_SPEED=true
+        make clean
+        make
+
+        mv results.xml results_ls.xml
+        mv tb.vcd tb_ls.vcd
+
+        # make will return success even if the test fails, so check for failure in the results.xml
+        ! grep failure results_ls.xml
 
     - name: upload vcd
       if: success() || failure()
