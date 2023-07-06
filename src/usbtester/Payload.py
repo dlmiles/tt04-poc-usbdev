@@ -27,14 +27,22 @@ class Payload():
             self.data = bytearray(data)	# copy
             self.index = 0
 
+        def has_more(self) -> bool:
+            return self.index < len(self.data)
+
         def __next__(self):
-            if self.index < len(self.data):
+            if self.has_more():
                 v = self.data[self.index]
                 #print("Payload.next() = {}/{} value={:02x}".format(self.index, len(self.data), v))
                 self.index += 1
                 return v
             #print("Payload.next() = {}/{} STOP".format(self.index, len(self.data)))
             raise StopIteration()
+
+        def next_or_default(self, default_value = None) -> int:
+            if self.has_more():
+                return self.__next__()
+            return default_value
 
     def __iter__(self):
         #print("Payload.iter() = {}".format(len(self.data)))
@@ -68,6 +76,27 @@ class Payload():
         self.data.extend(other.data)
         return self.__len__()
 
+    def bit_stuff_count(self) -> int:
+        count = 0.0
+        for b in self.data:
+            if b == 0xff:	# FIXME crude!
+                count += 1.25
+        if count > 1.0:
+            count += 1.0	# round up
+        return int(count)
+
+    def equals(self, other: 'Payload') -> bool:
+        assert type(self) is type(other)
+        assert type(self) == type(other)
+        assert self.__len__() == other.__len__(), f"Payload.equals() length mismatch {self.__len__()} != {other.__len__()}"
+        i = 0
+        for b in other:
+            if b != self.data[i]:
+                print("Payload.equals() MISMATCH at {} with values (ours) {:02x} != {:02x} (other)".format(i, self.data[i], b))
+                return False
+            i += 1
+        return True
+
     @staticmethod
     def int32(*values) -> 'Payload':
         # convert to bytes
@@ -79,6 +108,18 @@ class Payload():
             bytes.append((v >> 24) & 0xff)
         #print("int32() = {}".format(bytes))
         return Payload(bytes)
+
+    @staticmethod
+    def empty() -> 'Payload':
+        return Payload(bytearray())
+
+    @staticmethod
+    def fill(byte: int, count: int = 0) -> 'Payload':
+        ba = bytearray()
+        while count > 0:
+            ba.extend([byte & 0xff])
+            count -= 1
+        return Payload(ba)
 
 
 

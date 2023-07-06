@@ -11,6 +11,7 @@ from cocotb.binary import BinaryValue
 
 from usbtester import *
 from usbtester.cocotbutil import *
+from .Payload import *
 
 
 # These constants mirror the ones in tt04_to_wishbone.v
@@ -217,6 +218,7 @@ class TT2WB():
         self.enable = False
 
     async def exe_wbsel(self, sel: int = 0xf) -> None:
+        # FIXME we can track the last wbsel to mitigate unnecessary changes
         assert sel & ~0xf == 0, f"sel = 0x{sel:x} is not inside valid 4-bit range"
         await self.send(CMD_EXEC, (sel << 4) | EXE_WBSEL)
 
@@ -349,9 +351,74 @@ class TT2WB():
     async def wb_read(self, addr: int = None, format: Callable[[int,int], str] = None) -> int:
         return await self.exe_read(addr, format)
 
+    async def wb_read_payload(self, addr: int = None, count: int = 0, format: Callable[[int,int], str] = None) -> Payload:
+        assert count % 4 == 0
+
+        ba = bytearray()
+        raddr = addr
+        left = count
+        while left > 0:
+            assert left >= 4
+
+            data = await self.wb_read(raddr, format)
+
+            ba.extend([
+                (data      ) & 0xff,
+                (data >>  8) & 0xff,
+                (data >> 16) & 0xff,
+                (data >> 24) & 0xff
+            ])
+            left -= 4
+            raddr += 4
+
+        return Payload(ba)
+
     # FIXME change argument order  data, addr, format
     async def wb_write(self, addr: int, data: int, format: Callable[[int,int], str] = None) -> bool:
         return await self.exe_write(data, addr, format)
+
+    async def wb_write_payload(self, addr: int, payload: Payload, write_size: int = 4, last_write_size: int = 4) -> int:
+        assert payload is not None
+        assert write_size == 4		# write size bytes
+        assert last_write_size == 4	# end of buffer
+        ## FIXME the goal here was to allow 8/16/32bit writes (write_size),
+        ##    but also allow the last write (last_write_size) to be a smaller value
+        ##    using wb_WBSEL to setup partial writes
+        assert len(payload) % write_size == 0, f"{len(payload)} % {write_size} == 0"
+        assert len(payload) % last_write_size == 0, f"{len(payload)} % {last_write_size} == 0"
+
+        iter = payload.__iter__()	# byte iterator
+
+        waddr = addr
+        while iter.has_more():
+            i = 0
+            v = 0
+            while i < write_size:
+                b = iter.next_or_default()
+                if b is None:
+                    break
+                v = v << 8 | b
+                i += 1
+
+            if i == 0:
+                break
+
+            if iter.has_more():
+                assert write_size == i		## more to go
+            else:
+                assert last_write_size == i	## last one
+
+            if i != 4:
+                wbsel = (1 << 4) - 1	# produces mask 1=1 2=3 3=7 5=15
+                self.exe_wbsel(wbsel)
+
+            await self.wb_write(waddr, v)
+            waddr += i
+
+            if i != 4:
+                self.exe_wbsel()		# reset
+
+        return waddr - addr	# count
 
     def reg_dump(self, addr: int, value: int, pfx: str = '') -> None:
         self.check_address(addr)

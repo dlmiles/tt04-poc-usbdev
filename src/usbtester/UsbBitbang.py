@@ -144,15 +144,20 @@ class UsbBitbang():
             self.crc5_add(bf)
             self.crc16_add(bf)
 
-    OUT = 0x1
-    IN = 0x9
-    SOF = 0x5
-    SETUP = 0xd
-    DATA0 = 0x3
-    DATA1 = 0xc
-    ACK = 0x2
-    NACK = 0xa
-    STALL = 0xe
+    OUT		= 0x1
+    ACK		= 0x2
+    DATA0	= 0x3
+    PING	= 0x4
+    SOF		= 0x5
+    NYET	= 0x6
+    DATA2	= 0x7
+    IN		= 0x9
+    NAK		= 0xa
+    DATA1	= 0xb
+    PRE		= 0xc
+    SETUP	= 0xd
+    STALL	= 0xe
+    MDATA	= 0xf
 
     SYNC = 0x80
 
@@ -274,18 +279,28 @@ class UsbBitbang():
             desc = "ACK"
         elif value == self.DATA0:
             desc = "DATA0"
+        elif value == self.PING:
+            desc = "PING"
         elif value == self.SOF:
             desc = "SOF"
+        elif value == self.NYET:
+            desc = "NYET"
+        elif value == self.DATA2:
+            desc = "DATA2"
         elif value == self.IN:
             desc = "IN"
-        elif value == self.NACK:
-            desc = "NACK"
+        elif value == self.NAK:
+            desc = "NAK"
         elif value == self.DATA1:
             desc = "DATA1"
+        elif value == self.PRE:
+            desc = "PRE"
         elif value == self.SETUP:
             desc = "SETUP"
         elif value == self.STALL:
             desc = "STALL"
+        elif value == self.MDATA:
+            desc = "MDATA"
         else:
             desc = ""
         return "{}[0x{:02x}]".format(desc, value)
@@ -329,7 +344,7 @@ class UsbBitbang():
 
     async def send_handshake(self, token: int) -> None:
         self.validate_token(token)
-        assert token == self.ACK or token == self.NACK or token == self.STALL, f"send_handshake(token={token}) is not ACK, NACK or STALL type"
+        assert token == self.ACK or token == self.NAK or token == self.STALL, f"send_handshake(token={token}) is not ACK, NAK or STALL type"
         await self.send_sync()
         await self.send_pid(token=token)
         await self.send_eop()

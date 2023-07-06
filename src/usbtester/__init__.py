@@ -232,7 +232,7 @@ def reg_endp_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
         if value & 1 << 1:
             l.append("stall")
         if value & 1 << 2:
-            l.append("nack")
+            l.append("nak")
         if value & 1 << 3:
             l.append("data_phase_1")
         else:
@@ -385,7 +385,7 @@ def desc2(
 def reg_endp(
         enable: bool = False,
         stall: bool = False,
-        nack: bool = False,
+        nak: bool = False,
         data_phase: bool = False,
         head: int = 0, # 16byte alignment units
         isochronous: bool = False,
@@ -396,7 +396,7 @@ def reg_endp(
         val |= 0x00000001	# bit0
     if stall:
         val |= 0x00000002	# bit1
-    if nack:
+    if nak:
         val |= 0x00000004	# bit2
     if data_phase:
         val |= 0x00000008	# bit3 (tracks DATA0/DATA1)
