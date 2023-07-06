@@ -10,3 +10,5 @@ src/user_config.tcl
 
 __pycache__/
 *~
+
+UsbDeviceTop.v.gds_orig
