@@ -11,6 +11,7 @@ from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, FallingEdge, Timer, ClockCycles
 from cocotb.wavedrom import trace
 from cocotb.binary import BinaryValue
+from cocotb.utils import get_sim_time
 
 from usbtester import *
 from usbtester.cocotbutil import *
@@ -130,6 +131,19 @@ def resolve_LOW_SPEED():
     if 'LOW_SPEED' in os.environ:
         low_speed = True
     return low_speed
+
+
+def usb_spec_wall_clock_tolerance(value: int, LOW_SPEED: bool) -> tuple:
+    freq = 1500000 if(LOW_SPEED) else 12000000
+    ppm = 15000 if(LOW_SPEED) else 2500
+
+    variation = (freq * ppm) / 1000000
+    varfactor = variation / freq
+
+    tolmin = int(value - (value * varfactor))
+    tolmax = int(value + (value * varfactor))
+
+    return (tolmin, tolmax)
 
 
 def grep_file(filename: str, pattern1: str, pattern2: str) -> bool:
@@ -491,6 +505,7 @@ async def test_usbdev(dut):
     await ClockCycles(dut.clk, 256)
 
     LOW_SPEED = resolve_LOW_SPEED() # False for FULL_SPEED (default), or True for LOW_SPEED
+    SPEED_MODE = 'LOW_SPEED' if(LOW_SPEED) else 'FULL_SPEED'
 
     PHY_CLK_FACTOR = 4	# 2 per edge
     OVERSAMPLE = 4	# 48MHz / 12MHz
@@ -536,18 +551,27 @@ async def test_usbdev(dut):
     #
     await usb.send_SE0()	# !D+ bit0 !D- bit1 = SE0 RESET
 
-    # FIXME
+    elapsed_start = get_sim_time(units='us')
+
     reset_ticks = int((48000000 / 100) * PHY_CLK_FACTOR)	# 48MHz for 10ms
 
-    ## auto-detect and also
+    # It doesn't matter which timerLong is setup in ther verilog,
+    # It only matters we can detected which and know sim_timerLong_factor
+    # Then apply FS or LS requirements
 
+    ## auto-detect and also
+    (tolmin, tolmax) = usb_spec_wall_clock_tolerance(10000, LOW_SPEED)	# USB host-to-device reset is 10ms
+    dut._log.info("USB host-to-device signalling reset specification target is 10000us  min={} max={} after ppm clock tolerance {}".format(tolmin, tolmax, SPEED_MODE))
+
+    sim_timerLong_factor = 1
     ##egrep "rx_timerLong_reset =" UsbDeviceTop.v # 23'h07403f ## FULL
     if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h07403f"):
         ticks = reset_ticks	## ENABLE
 
     ## egrep "rx_timerLong_reset =" UsbDeviceTop.v ## 23'h000947  1/200 FS (default SIM speedup)
     if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h000947"):
-        ticks = int(reset_ticks / 200)	## ENABLE 1/200th
+        sim_timerLong_factor = 200
+        ticks = int(reset_ticks / sim_timerLong_factor)	## ENABLE 1/200th
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-timerLong-200xspeedup (USB FULL_SPEED test mode) = {}".format(reset_ticks, ticks))
         if 'CI' in os.environ and os.environ['CI'] == 'true':
             dut._log.warning("You are building GDS for production but are using UsbDeviceTop.v with simulation modified timer values".format(reset_ticks, ticks))
@@ -555,7 +579,8 @@ async def test_usbdev(dut):
 
     ##                                             ## 23'h004a3f  1/25  LS
     if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h004a3f"):
-        ticks = int(reset_ticks / 25)	## ENABLE 1/25th
+        sim_timerLong_factor = 25
+        ticks = int(reset_ticks / sim_timerLong_factor)	## ENABLE 1/25th
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-timerLong-25xspeedup (USB LOW_SPEED test mode) = {}".format(reset_ticks, ticks))
         if 'CI' in os.environ and os.environ['CI'] == 'true':
             dut._log.warning("You are building GDS for production but are using UsbDeviceTop.v with simulation modified timer values".format(reset_ticks, ticks))
@@ -575,6 +600,22 @@ async def test_usbdev(dut):
         await ClockCycles(dut.clk, ticks)
     else:
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SKIPPED".format(reset_ticks))
+
+    ## FIXME we want to know elapsed when interrupt triggered to confirm it is < tolmin and within a %
+    #elapsed_after_factor_for_interrrupt = fsm_interrupt()
+
+    elapsed_finish = get_sim_time(units='us')
+    elapsed = elapsed_finish - elapsed_start
+    elapsed_after_factor = elapsed * sim_timerLong_factor
+    # We need to trigger our reset detection somewhere close to the minimum (tolmin)
+    # But allow the implementation to work and be compatible with a time exceeding maximum (tolmax)
+
+    (tolmin, tolmax) = usb_spec_wall_clock_tolerance(10000, LOW_SPEED)	# USB host-to-device reset is 10ms
+    dut._log.info("ELAPSED = {:7f} x {} = {}us  (USB reset spec is 10000us  min={} max={})".format(elapsed, sim_timerLong_factor, elapsed_after_factor, tolmin, tolmax))
+
+    # FIXME this assert should replace elapsed_after_factor with elapsed_after_factor_for_interrrupt
+    #assert elapsed_after_factor < tolmin, f"USB RESET wall-clock elapsed is too short {elapsed_after_factor} > {tolmin}"
+    #assert elapsed_after_factor > tolmax, f"USB RESET wall-clock elapsed is too long {elapsed_after_factor} > {tolmax}"
 
     # REG_INTERRUPT also has 0x0001000 set for RESET
     v = await ttwb.wb_read(REG_INTERRUPT, regrd)
@@ -785,10 +826,10 @@ async def test_usbdev(dut):
     await usb.send_crc16_payload(usb.DATA0, Payload.int32(*setup), crc16=0x304f) # explicit crc16
     await usb.set_idle()
 
-    # FULL_SPEED=18 LOW_SPEED=130+1
+    # FULL_SPEED=18 LOW_SPEED=130+4
     await ClockCycles(dut.clk, int((TICKS_PER_BIT/2)+2))	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+2=18
     if LOW_SPEED:
-        await ClockCycles(dut.clk, 2)
+        await ClockCycles(dut.clk, 4)
     ## Manage interrupt and reset
     assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
     data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
