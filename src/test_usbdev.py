@@ -211,6 +211,33 @@ def signal_interrupts(dut) -> bool:
     return extract_bit(dut.uio_out, INTERRUPTS_BITID)
 
 
+async def wait_for_signal_interrupts(dut, not_after: int = None, not_before: int = None) -> int:
+    limit = not_after if(not_after is not None) else sys.maxsize
+    count = 0
+    bf = extract_bit(dut.uio_out, INTERRUPTS_BITID)
+    while not bf and count < limit:
+        count += 1
+        await ClockCycles(dut.clk, 1)
+        bf = extract_bit(dut.uio_out, INTERRUPTS_BITID)
+
+    if bf and not_before is not None:
+        assert count >= not_before, f"wait_for_signal_interrupts(not_after={not_after}, not_before={not_before}) = NOT_BEFORE failed at count={count} too early"
+
+    if not_after is not None:
+        # Find out when it would have triggered and report
+        tmp = count
+        while not bf and tmp < limit + 1000:
+            tmp += 1
+            await ClockCycles(dut.clk, 1)
+            bf = extract_bit(dut.uio_out, INTERRUPTS_BITID)
+        msg = f"(signal fired at {tmp})" if(bf) else f"(signal did not fire by {tmp})"
+        assert count <= not_after, f"wait_for_signal_interrupts(not_after={not_after}, not_before={not_before}) = NOT_AFTER failed at count={count} too late {msg}"
+
+    dut._log.warning(f"wait_for_signal_interrupts(not_after={not_after}, not_before={not_before}) = PASS count={count} bf={bf}")
+
+    return count if(bf) else -1
+
+
 def signal_power_change(dut, bf: bool) -> bool:
     return change_bit(dut.uio_in, POWER_BITID, bf)
 
@@ -618,7 +645,7 @@ async def test_usbdev(dut):
     #assert elapsed_after_factor < tolmin, f"USB RESET wall-clock elapsed is too short {elapsed_after_factor} > {tolmin}"
     #assert elapsed_after_factor > tolmax, f"USB RESET wall-clock elapsed is too long {elapsed_after_factor} > {tolmax}"
 
-    assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+    assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
     # REG_INTERRUPT also has 0x0001000 set for RESET
     data = await ttwb.wb_read(REG_INTERRUPT, regrd)
@@ -738,10 +765,8 @@ async def test_usbdev(dut):
 
     await usb.set_idle()
 
-    await ClockCycles(dut.clk, TICKS_PER_BIT-3)	# WFI
-    await ClockCycles(dut.clk, 3+TICKS_PER_BIT)
     ## Manage interrupt and reset
-    assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+    assert await wait_for_signal_interrupts(dut, int(TICKS_PER_BIT/2)) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
     data = await ttwb.wb_read(REG_INTERRUPT)
     assert data & INTR_EP0SETUP != 0, f"REG_INTERRUPT expected to see: EP0SETUP bit set"
     await ttwb.wb_write(REG_INTERRUPT, INTR_EP0SETUP)	# UVM=W1C
@@ -830,11 +855,16 @@ async def test_usbdev(dut):
         await usb.set_idle()
 
         # FULL_SPEED=18 LOW_SPEED=130+4 (was 64)
-        await ClockCycles(dut.clk, int((TICKS_PER_BIT/2)+2))	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+2=18
-        if LOW_SPEED:
-            await ClockCycles(dut.clk, 4+16+16+16+12)	# CI need +4 more then local here ?
+        wfi_limit = int((TICKS_PER_BIT/2)+2) if(LOW_SPEED) else int(TICKS_PER_BIT/2)
+        assert await wait_for_signal_interrupts(dut, wfi_limit) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+
+        # FIXME remove this now we have wait_for_signal_interrupts()
+        #await ClockCycles(dut.clk, int((TICKS_PER_BIT/2)+2))	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+2=18
+        #if LOW_SPEED:
+        #    await ClockCycles(dut.clk, 4+16+16+16+12)	# CI need +4 more then local here ?
+        #await ClockCycles(dut.clk, TICKS_PER_BIT)	# added since aLen=96
+
         ## Manage interrupt and reset
-        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.valufe)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
         assert data & INTR_EP0SETUP != 0, f"REG_INTERRUPT expects EP0SETUP to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0SETUP, regdesc)
@@ -906,7 +936,7 @@ async def test_usbdev(dut):
         #  it also has a mode desc.completionOnFull which should be more appropiately renamed to desc.completionOnOverrun
         #  but IMHO it should at least mark an error occured that is visible to the driver.
         #
-        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
@@ -960,7 +990,7 @@ async def test_usbdev(dut):
         await ClockCycles(dut.clk, 17)	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+1=17
         if LOW_SPEED:
             await ClockCycles(dut.clk, 7*16)
-        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
@@ -1180,7 +1210,7 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
@@ -1279,7 +1309,7 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
@@ -1362,7 +1392,7 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
@@ -1594,7 +1624,7 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
@@ -1668,7 +1698,7 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
@@ -1820,7 +1850,7 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP1 != 0, f"REG_INTERRUPT expects EP1 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP1, regwr)
@@ -1910,7 +1940,7 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP1 != 0, f"REG_INTERRUPT expects EP1 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP1, regwr)
@@ -2270,7 +2300,7 @@ async def test_usbdev(dut):
         debug(dut, '970_USB_RESET_CHECK')
 
         # REG_INTERRUPT also has 0x0001000 set for RESET
-        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_RESET != 0, f"REG_INTERRUPT expected to see: RESET bit set"
         await ttwb.wb_write(REG_INTERRUPT, INTR_RESET, regwr)	# W1C
