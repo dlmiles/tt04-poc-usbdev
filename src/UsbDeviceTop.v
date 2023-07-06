@@ -106,6 +106,7 @@ module UsbDeviceWithPhyWishbone (
   wire       [31:0]   ctrl_logic_io_ctrl_rsp_payload_fragment_data;
   wire                ctrl_logic_io_phy_resumeIt;
   wire                ctrl_logic_io_phy_pullup;
+  wire                ctrl_logic_io_phy_lowSpeed;
   wire                ctrl_logic_io_phy_tx_stream_valid;
   wire                ctrl_logic_io_phy_tx_stream_payload_last;
   wire       [7:0]    ctrl_logic_io_phy_tx_stream_payload_fragment;
@@ -140,6 +141,7 @@ module UsbDeviceWithPhyWishbone (
   wire                ctrl_ctrl_logic_io_phy_cc_input_rx_stuffingError;
   wire                ctrl_ctrl_logic_io_phy_cc_output_resumeIt;
   wire                ctrl_ctrl_logic_io_phy_cc_output_pullup;
+  wire                ctrl_ctrl_logic_io_phy_cc_output_lowSpeed;
   wire                ctrl_ctrl_logic_io_phy_cc_output_tx_stream_valid;
   wire                ctrl_ctrl_logic_io_phy_cc_output_tx_stream_payload_last;
   wire       [7:0]    ctrl_ctrl_logic_io_phy_cc_output_tx_stream_payload_fragment;
@@ -243,6 +245,7 @@ module UsbDeviceWithPhyWishbone (
     .io_phy_tick                          (ctrl_ctrl_logic_io_phy_cc_input_tick                    ), //i
     .io_phy_power                         (ctrl_ctrl_logic_io_phy_cc_input_power                   ), //i
     .io_phy_resumeIt                      (ctrl_logic_io_phy_resumeIt                              ), //o
+    .io_phy_lowSpeed                      (ctrl_logic_io_phy_lowSpeed                              ), //o
     .io_interrupt                         (ctrl_logic_io_interrupt                                 ), //o
     .ctrlCd_clk                           (ctrlCd_clk                                              ), //i
     .ctrlCd_reset                         (ctrlCd_reset                                            )  //i
@@ -265,6 +268,7 @@ module UsbDeviceWithPhyWishbone (
     .io_ctrl_tick                       (phy_logic_io_ctrl_tick                                          ), //o
     .io_ctrl_power                      (phy_logic_io_ctrl_power                                         ), //o
     .io_ctrl_resumeIt                   (ctrl_ctrl_logic_io_phy_cc_output_resumeIt                       ), //i
+    .io_ctrl_lowSpeed                   (ctrl_ctrl_logic_io_phy_cc_output_lowSpeed                       ), //i
     .io_usb_tx_enable                   (phy_logic_io_usb_tx_enable                                      ), //o
     .io_usb_tx_data                     (phy_logic_io_usb_tx_data                                        ), //o
     .io_usb_tx_se0                      (phy_logic_io_usb_tx_se0                                         ), //o
@@ -293,6 +297,7 @@ module UsbDeviceWithPhyWishbone (
     .input_tick                        (ctrl_ctrl_logic_io_phy_cc_input_tick                            ), //o
     .input_power                       (ctrl_ctrl_logic_io_phy_cc_input_power                           ), //o
     .input_resumeIt                    (ctrl_logic_io_phy_resumeIt                                      ), //i
+    .input_lowSpeed                    (ctrl_logic_io_phy_lowSpeed                                      ), //i
     .output_tx_stream_valid            (ctrl_ctrl_logic_io_phy_cc_output_tx_stream_valid                ), //o
     .output_tx_stream_ready            (phy_logic_io_ctrl_tx_stream_ready                               ), //i
     .output_tx_stream_payload_last     (ctrl_ctrl_logic_io_phy_cc_output_tx_stream_payload_last         ), //o
@@ -310,6 +315,7 @@ module UsbDeviceWithPhyWishbone (
     .output_tick                       (phy_logic_io_ctrl_tick                                          ), //i
     .output_power                      (phy_logic_io_ctrl_power                                         ), //i
     .output_resumeIt                   (ctrl_ctrl_logic_io_phy_cc_output_resumeIt                       ), //o
+    .output_lowSpeed                   (ctrl_ctrl_logic_io_phy_cc_output_lowSpeed                       ), //o
     .phyCd_clk                         (phyCd_clk                                                       ), //i
     .phyCd_reset                       (phyCd_reset                                                     ), //i
     .ctrlCd_clk                        (ctrlCd_clk                                                      ), //i
@@ -413,6 +419,7 @@ module PhyCc (
   output              input_tick,
   output              input_power,
   input               input_resumeIt,
+  input               input_lowSpeed,
   output              output_tx_stream_valid,
   input               output_tx_stream_ready,
   output              output_tx_stream_payload_last,
@@ -430,6 +437,7 @@ module PhyCc (
   input               output_tick,
   input               output_power,
   output              output_resumeIt,
+  output              output_lowSpeed,
   input               phyCd_clk,
   input               phyCd_reset,
   input               ctrlCd_clk,
@@ -449,6 +457,7 @@ module PhyCc (
   wire                output_rx_stuffingError_buffercc_io_dataOut;
   wire                input_pullup_buffercc_io_dataOut;
   wire                input_resumeIt_buffercc_io_dataOut;
+  wire                input_lowSpeed_buffercc_io_dataOut;
   wire                pulseCCByToggle_3_io_pulseOut;
   wire                output_reset_buffercc_io_dataOut;
   wire                output_suspend_buffercc_io_dataOut;
@@ -519,6 +528,12 @@ module PhyCc (
     .phyCd_clk   (phyCd_clk                         ), //i
     .phyCd_reset (phyCd_reset                       )  //i
   );
+  BufferCC_2 input_lowSpeed_buffercc (
+    .io_dataIn   (input_lowSpeed                    ), //i
+    .io_dataOut  (input_lowSpeed_buffercc_io_dataOut), //o
+    .phyCd_clk   (phyCd_clk                         ), //i
+    .phyCd_reset (phyCd_reset                       )  //i
+  );
   PulseCCByToggle_1 pulseCCByToggle_3 (
     .io_pulseIn               (output_tick                                 ), //i
     .io_pulseOut              (pulseCCByToggle_3_io_pulseOut               ), //o
@@ -582,6 +597,7 @@ module PhyCc (
   assign input_rx_stuffingError = output_rx_stuffingError_buffercc_io_dataOut;
   assign output_pullup = input_pullup_buffercc_io_dataOut;
   assign output_resumeIt = input_resumeIt_buffercc_io_dataOut;
+  assign output_lowSpeed = input_lowSpeed_buffercc_io_dataOut;
   assign input_tick = pulseCCByToggle_3_io_pulseOut;
   assign input_reset = output_reset_buffercc_io_dataOut;
   assign input_suspend = output_suspend_buffercc_io_dataOut;
@@ -626,6 +642,7 @@ module UsbDevicePhyNative (
   output              io_ctrl_tick,
   output              io_ctrl_power,
   input               io_ctrl_resumeIt,
+  input               io_ctrl_lowSpeed,
   output              io_usb_tx_enable,
   output              io_usb_tx_data,
   output              io_usb_tx_se0,
@@ -800,7 +817,7 @@ module UsbDevicePhyNative (
   assign _zz_tickTimer_counter_valueNext_1 = tickTimer_counter_willIncrement;
   assign _zz_tickTimer_counter_valueNext = {1'd0, _zz_tickTimer_counter_valueNext_1};
   UsbLsFsPhyFilter rx_filter (
-    .io_lowSpeed       (1'b0                       ), //i
+    .io_lowSpeed       (io_ctrl_lowSpeed           ), //i
     .io_usb_dp         (io_usb_rx_dp               ), //i
     .io_usb_dm         (io_usb_rx_dm               ), //i
     .io_filtred_dp     (rx_filter_io_filtred_dp    ), //o
@@ -911,12 +928,12 @@ module UsbDevicePhyNative (
   assign timer_twoCycle = (timer_counter == _zz_timer_twoCycle);
   assign timer_fourCycle = (_zz_timer_fourCycle == (timer_lowSpeed ? 8'h9f : 8'h13));
   always @(*) begin
-    timer_lowSpeed = 1'b0;
+    timer_lowSpeed = io_ctrl_lowSpeed;
     case(tx_frame_stateReg)
       tx_frame_enumDef_IDLE : begin
       end
       tx_frame_enumDef_TAKE_LINE : begin
-        timer_lowSpeed = 1'b0;
+        timer_lowSpeed = io_ctrl_lowSpeed;
       end
       tx_frame_enumDef_SYNC : begin
       end
@@ -942,7 +959,7 @@ module UsbDevicePhyNative (
 
   assign rxToTxDelay_inc = 1'b1;
   assign rxToTxDelay_twoCycle = (_zz_rxToTxDelay_twoCycle == (rxToTxDelay_lowSpeed ? 6'h3f : 6'h07));
-  assign rxToTxDelay_lowSpeed = 1'b0;
+  assign rxToTxDelay_lowSpeed = io_ctrl_lowSpeed;
   always @(*) begin
     tx_encoder_input_valid = 1'b0;
     if(tx_serialiser_input_valid) begin
@@ -1346,7 +1363,7 @@ module UsbDevicePhyNative (
   end
 
   assign rx_packet_errorTimeout_inc = 1'b1;
-  assign rx_packet_errorTimeout_lowSpeed = 1'b0;
+  assign rx_packet_errorTimeout_lowSpeed = io_ctrl_lowSpeed;
   assign rx_packet_errorTimeout_trigger = (_zz_rx_packet_errorTimeout_trigger == (rx_packet_errorTimeout_lowSpeed ? 10'h27f : 10'h04f));
   always @(*) begin
     rx_timerLong_clear = 1'b0;
@@ -1367,7 +1384,7 @@ module UsbDevicePhyNative (
   assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h0002b7);
   assign rx_timerLong_oneBit = (rx_timerLong_counter == 23'h000002);
   assign rx_timerLong_threeBit = (rx_timerLong_counter == 23'h00000a);
-  assign rx_timerLong_lowSpeed = 1'b0;
+  assign rx_timerLong_lowSpeed = io_ctrl_lowSpeed;
   assign rx_detect_current = {rx_filter_io_filtred_dm,rx_filter_io_filtred_dp};
   assign when_UsbDevicePhyNative_l360 = rx_timerLong_counter[22];
   assign when_UsbDevicePhyNative_l363 = (rx_detect_current != rx_detect_previous);
@@ -1711,6 +1728,7 @@ module UsbDeviceCtrl (
   input               io_phy_tick,
   input               io_phy_power,
   output              io_phy_resumeIt,
+  output              io_phy_lowSpeed,
   output              io_interrupt,
   input               ctrlCd_clk,
   input               ctrlCd_reset
@@ -1827,11 +1845,11 @@ module UsbDeviceCtrl (
   reg                 regs_interrupts_reset;
   reg                 regs_interrupts_suspend;
   reg                 io_phy_suspend_regNext;
-  wire                when_UsbDeviceCtrl_l212;
+  wire                when_UsbDeviceCtrl_l217;
   reg                 regs_interrupts_resume;
   reg                 regs_interrupts_disconnect;
   reg                 io_phy_power_regNext;
-  wire                when_UsbDeviceCtrl_l214;
+  wire                when_UsbDeviceCtrl_l219;
   reg                 regs_interrupts_ep0Setup;
   reg                 regs_interrupts_enable;
   wire                regs_interrupts_pending;
@@ -1839,6 +1857,7 @@ module UsbDeviceCtrl (
   reg                 regs_halt_enable;
   reg                 regs_halt_effective;
   wire                regs_halt_hit;
+  wire                regs_lowSpeed;
   reg                 regs_pullup;
   wire                memory_readPort_cmd_valid;
   wire       [4:0]    memory_readPort_cmd_payload;
@@ -1935,7 +1954,7 @@ module UsbDeviceCtrl (
   reg                 dataTx_input_halfPipe_rData_last;
   reg        [7:0]    dataTx_input_halfPipe_rData_fragment;
   wire                when_Stream_l370_1;
-  wire                when_UsbDeviceCtrl_l345;
+  wire                when_UsbDeviceCtrl_l352;
   reg        [31:0]   ep_word;
   wire       [2:0]    ep_head;
   wire                ep_enable;
@@ -1975,7 +1994,7 @@ module UsbDeviceCtrl (
   reg        [3:0]    active_handshakePid;
   reg                 active_completion;
   reg                 active_noUpdate;
-  wire                when_UsbDeviceCtrl_l440;
+  wire                when_UsbDeviceCtrl_l459;
   reg        [1:0]    active_byteSel;
   reg                 active_dataRxOverrun;
   wire                main_wantExit;
@@ -2037,36 +2056,36 @@ module UsbDeviceCtrl (
   wire                when_UsbTokenRxFsm_l107;
   reg        [4:0]    active_stateReg;
   reg        [4:0]    active_stateNext;
-  wire                when_UsbDeviceCtrl_l456;
-  wire                when_UsbDeviceCtrl_l465;
-  wire                when_UsbDeviceCtrl_l468;
-  wire                when_UsbDeviceCtrl_l470;
-  wire                when_UsbDeviceCtrl_l495;
-  wire                when_UsbDeviceCtrl_l498;
-  wire                when_UsbDeviceCtrl_l513;
-  wire                when_UsbDeviceCtrl_l568;
-  wire                when_UsbDeviceCtrl_l646;
-  wire                when_UsbDeviceCtrl_l659;
-  wire                when_UsbDeviceCtrl_l662;
-  wire                when_UsbDeviceCtrl_l665;
-  wire                when_UsbDeviceCtrl_l668;
+  wire                when_UsbDeviceCtrl_l475;
+  wire                when_UsbDeviceCtrl_l484;
+  wire                when_UsbDeviceCtrl_l487;
+  wire                when_UsbDeviceCtrl_l489;
+  wire                when_UsbDeviceCtrl_l514;
+  wire                when_UsbDeviceCtrl_l517;
+  wire                when_UsbDeviceCtrl_l532;
   wire                when_UsbDeviceCtrl_l587;
-  wire                when_UsbDeviceCtrl_l617;
-  wire                when_UsbDeviceCtrl_l619;
+  wire                when_UsbDeviceCtrl_l665;
+  wire                when_UsbDeviceCtrl_l678;
+  wire                when_UsbDeviceCtrl_l681;
+  wire                when_UsbDeviceCtrl_l684;
+  wire                when_UsbDeviceCtrl_l687;
+  wire                when_UsbDeviceCtrl_l606;
+  wire                when_UsbDeviceCtrl_l636;
+  wire                when_UsbDeviceCtrl_l638;
   reg                 io_phy_rx_active_regNext;
-  wire                when_UsbDeviceCtrl_l625;
-  wire                when_UsbDeviceCtrl_l631;
-  wire                when_UsbDeviceCtrl_l699;
-  wire                when_UsbDeviceCtrl_l708;
-  wire                when_UsbDeviceCtrl_l757;
-  wire                when_UsbDeviceCtrl_l759;
-  wire                when_UsbDeviceCtrl_l764;
+  wire                when_UsbDeviceCtrl_l644;
+  wire                when_UsbDeviceCtrl_l650;
+  wire                when_UsbDeviceCtrl_l718;
+  wire                when_UsbDeviceCtrl_l729;
+  wire                when_UsbDeviceCtrl_l778;
+  wire                when_UsbDeviceCtrl_l780;
+  wire                when_UsbDeviceCtrl_l785;
   wire                when_StateMachine_l253_1;
   wire                when_StateMachine_l253_2;
   wire                when_StateMachine_l253_3;
   reg        [2:0]    main_stateReg;
   reg        [2:0]    main_stateNext;
-  wire                when_UsbDeviceCtrl_l793;
+  wire                when_UsbDeviceCtrl_l814;
   wire                when_StateMachine_l253_4;
   wire                when_StateMachine_l253_5;
   `ifndef SYNTHESIS
@@ -2625,9 +2644,11 @@ module UsbDeviceCtrl (
     end
   end
 
-  assign when_UsbDeviceCtrl_l212 = (io_phy_suspend && (! io_phy_suspend_regNext));
-  assign when_UsbDeviceCtrl_l214 = ((! io_phy_power) && io_phy_power_regNext);
+  assign when_UsbDeviceCtrl_l217 = (io_phy_suspend && (! io_phy_suspend_regNext));
+  assign when_UsbDeviceCtrl_l219 = ((! io_phy_power) && io_phy_power_regNext);
   assign regs_interrupts_pending = (((((((|regs_interrupts_endpoints) || regs_interrupts_reset) || regs_interrupts_suspend) || regs_interrupts_resume) || regs_interrupts_disconnect) || regs_interrupts_ep0Setup) && regs_interrupts_enable);
+  assign regs_lowSpeed = 1'b0;
+  assign io_phy_lowSpeed = regs_lowSpeed;
   assign io_phy_pullup = regs_pullup;
   assign memory_readPort_rsp = _zz_memory_ram_port0;
   assign memory_internal_readRsp_valid = memory_internal_readCmd_regNext_valid;
@@ -2640,13 +2661,13 @@ module UsbDeviceCtrl (
       active_enumDef_TOKEN : begin
       end
       active_enumDef_ADDRESS_HIT : begin
-        if(!when_UsbDeviceCtrl_l456) begin
+        if(!when_UsbDeviceCtrl_l475) begin
           case(token_pid)
             4'b0101 : begin
             end
             4'b1101, 4'b0001, 4'b1001 : begin
-              if(when_UsbDeviceCtrl_l465) begin
-                if(when_UsbDeviceCtrl_l468) begin
+              if(when_UsbDeviceCtrl_l484) begin
+                if(when_UsbDeviceCtrl_l487) begin
                   memory_internal_readCmd_valid = 1'b1;
                 end
               end
@@ -2680,7 +2701,7 @@ module UsbDeviceCtrl (
       active_enumDef_HANDSHAKE_TX_1 : begin
       end
       active_enumDef_DATA_TX_0 : begin
-        if(when_UsbDeviceCtrl_l587) begin
+        if(when_UsbDeviceCtrl_l606) begin
           if(dataTx_input_ready) begin
             memory_internal_readCmd_valid = 1'b1;
           end
@@ -2712,13 +2733,13 @@ module UsbDeviceCtrl (
       active_enumDef_TOKEN : begin
       end
       active_enumDef_ADDRESS_HIT : begin
-        if(!when_UsbDeviceCtrl_l456) begin
+        if(!when_UsbDeviceCtrl_l475) begin
           case(token_pid)
             4'b0101 : begin
             end
             4'b1101, 4'b0001, 4'b1001 : begin
-              if(when_UsbDeviceCtrl_l465) begin
-                if(when_UsbDeviceCtrl_l468) begin
+              if(when_UsbDeviceCtrl_l484) begin
+                if(when_UsbDeviceCtrl_l487) begin
                   memory_internal_readCmd_payload = (_zz_memory_internal_readCmd_payload >>> 2'd2);
                 end
               end
@@ -2752,7 +2773,7 @@ module UsbDeviceCtrl (
       active_enumDef_HANDSHAKE_TX_1 : begin
       end
       active_enumDef_DATA_TX_0 : begin
-        if(when_UsbDeviceCtrl_l587) begin
+        if(when_UsbDeviceCtrl_l606) begin
           if(dataTx_input_ready) begin
             memory_internal_readCmd_payload = (desc_currentByte >>> 2'd2);
           end
@@ -2943,7 +2964,7 @@ module UsbDeviceCtrl (
           if(desc_data1OnCompletion) begin
             memory_internal_writeCmd_payload_data[3] = 1'b1;
           end
-          if(when_UsbDeviceCtrl_l764) begin
+          if(when_UsbDeviceCtrl_l785) begin
             memory_internal_writeCmd_payload_data[15 : 4] = 12'h000;
           end
         end
@@ -3213,14 +3234,14 @@ module UsbDeviceCtrl (
       active_enumDef_TOKEN : begin
       end
       active_enumDef_ADDRESS_HIT : begin
-        if(!when_UsbDeviceCtrl_l456) begin
+        if(!when_UsbDeviceCtrl_l475) begin
           case(token_pid)
             4'b0101 : begin
             end
             4'b1101, 4'b0001, 4'b1001 : begin
-              if(when_UsbDeviceCtrl_l465) begin
-                if(when_UsbDeviceCtrl_l468) begin
-                  if(when_UsbDeviceCtrl_l470) begin
+              if(when_UsbDeviceCtrl_l484) begin
+                if(when_UsbDeviceCtrl_l487) begin
+                  if(when_UsbDeviceCtrl_l489) begin
                     dataRx_wantStart = 1'b1;
                   end
                 end
@@ -3353,7 +3374,7 @@ module UsbDeviceCtrl (
 
   always @(*) begin
     dataTx_wantStart = 1'b0;
-    if(when_UsbDeviceCtrl_l345) begin
+    if(when_UsbDeviceCtrl_l352) begin
       dataTx_wantStart = 1'b1;
     end
   end
@@ -3453,7 +3474,7 @@ module UsbDeviceCtrl (
           4'b0001 : begin
           end
           4'b1001 : begin
-            if(!when_UsbDeviceCtrl_l568) begin
+            if(!when_UsbDeviceCtrl_l587) begin
               if(desc_full) begin
                 dataTx_startNull = 1'b1;
               end
@@ -3657,7 +3678,7 @@ module UsbDeviceCtrl (
   assign dataTx_input_halfPipe_m2sPipe_ready = dataTx_data_ready;
   assign dataTx_data_payload_last = dataTx_input_halfPipe_m2sPipe_payload_last;
   assign dataTx_data_payload_fragment = dataTx_input_halfPipe_m2sPipe_payload_fragment;
-  assign when_UsbDeviceCtrl_l345 = ((dataTx_data_valid && (dataTx_stateReg == dataTx_enumDef_BOOT)) || dataTx_startNull);
+  assign when_UsbDeviceCtrl_l352 = ((dataTx_data_valid && (dataTx_stateReg == dataTx_enumDef_BOOT)) || dataTx_startNull);
   assign ep_head = ep_word[6 : 4];
   assign ep_enable = ep_word[0];
   assign ep_stall = ep_word[1];
@@ -3698,7 +3719,7 @@ module UsbDeviceCtrl (
       end
       active_enumDef_DATA_RX : begin
         if(dataRx_data_valid) begin
-          if(!when_UsbDeviceCtrl_l646) begin
+          if(!when_UsbDeviceCtrl_l665) begin
             desc_offsetIncrement = 1'b1;
           end
         end
@@ -3710,7 +3731,7 @@ module UsbDeviceCtrl (
       active_enumDef_HANDSHAKE_TX_1 : begin
       end
       active_enumDef_DATA_TX_0 : begin
-        if(when_UsbDeviceCtrl_l587) begin
+        if(when_UsbDeviceCtrl_l606) begin
           if(dataTx_input_ready) begin
             desc_offsetIncrement = 1'b1;
           end
@@ -3810,7 +3831,7 @@ module UsbDeviceCtrl (
       end
       active_enumDef_DATA_RX : begin
         if(dataRx_data_valid) begin
-          if(!when_UsbDeviceCtrl_l646) begin
+          if(!when_UsbDeviceCtrl_l665) begin
             byteCounter_increment = 1'b1;
           end
         end
@@ -3822,7 +3843,7 @@ module UsbDeviceCtrl (
       active_enumDef_HANDSHAKE_TX_1 : begin
       end
       active_enumDef_DATA_TX_0 : begin
-        if(when_UsbDeviceCtrl_l587) begin
+        if(when_UsbDeviceCtrl_l606) begin
           if(dataTx_input_ready) begin
             byteCounter_increment = 1'b1;
           end
@@ -3856,7 +3877,7 @@ module UsbDeviceCtrl (
   end
 
   assign active_wantKill = 1'b0;
-  assign when_UsbDeviceCtrl_l440 = ((((active_stateReg == active_enumDef_BOOT) || (active_stateReg == active_enumDef_IDLE)) || (active_stateReg == active_enumDef_TOKEN)) || (! regs_halt_hit));
+  assign when_UsbDeviceCtrl_l459 = ((((active_stateReg == active_enumDef_BOOT) || (active_stateReg == active_enumDef_IDLE)) || (active_stateReg == active_enumDef_TOKEN)) || (! regs_halt_hit));
   assign main_wantExit = 1'b0;
   always @(*) begin
     main_wantStart = 1'b0;
@@ -4223,7 +4244,7 @@ module UsbDeviceCtrl (
         end
       end
       active_enumDef_ADDRESS_HIT : begin
-        if(when_UsbDeviceCtrl_l456) begin
+        if(when_UsbDeviceCtrl_l475) begin
           active_stateNext = active_enumDef_IDLE;
         end else begin
           case(token_pid)
@@ -4231,8 +4252,8 @@ module UsbDeviceCtrl (
               active_stateNext = active_enumDef_IDLE;
             end
             4'b1101, 4'b0001, 4'b1001 : begin
-              if(when_UsbDeviceCtrl_l465) begin
-                if(when_UsbDeviceCtrl_l468) begin
+              if(when_UsbDeviceCtrl_l484) begin
+                if(when_UsbDeviceCtrl_l487) begin
                   active_stateNext = active_enumDef_EP_READ;
                 end else begin
                   active_stateNext = active_enumDef_IDLE;
@@ -4251,17 +4272,17 @@ module UsbDeviceCtrl (
         active_stateNext = active_enumDef_EP_ANALYSE;
       end
       active_enumDef_EP_ANALYSE : begin
-        if(when_UsbDeviceCtrl_l495) begin
+        if(when_UsbDeviceCtrl_l514) begin
           active_stateNext = active_enumDef_IDLE;
         end else begin
           if(token_isSetup) begin
-            if(when_UsbDeviceCtrl_l498) begin
+            if(when_UsbDeviceCtrl_l517) begin
               active_stateNext = active_enumDef_IDLE;
             end else begin
               active_stateNext = active_enumDef_DESC_ANALYSE;
             end
           end else begin
-            if(when_UsbDeviceCtrl_l513) begin
+            if(when_UsbDeviceCtrl_l532) begin
               case(token_pid)
                 4'b0001 : begin
                   active_stateNext = active_enumDef_DATA_RX;
@@ -4305,7 +4326,7 @@ module UsbDeviceCtrl (
             end
           end
           4'b1001 : begin
-            if(when_UsbDeviceCtrl_l568) begin
+            if(when_UsbDeviceCtrl_l587) begin
               active_stateNext = active_enumDef_IDLE;
             end else begin
               active_stateNext = active_enumDef_DATA_TX_0;
@@ -4322,10 +4343,10 @@ module UsbDeviceCtrl (
         end
       end
       active_enumDef_DATA_RX_ANALYSE : begin
-        if(when_UsbDeviceCtrl_l659) begin
+        if(when_UsbDeviceCtrl_l678) begin
           active_stateNext = active_enumDef_IDLE;
         end else begin
-          if(when_UsbDeviceCtrl_l665) begin
+          if(when_UsbDeviceCtrl_l684) begin
             active_stateNext = active_enumDef_IDLE;
           end else begin
             if(ep_isochronous) begin
@@ -4347,7 +4368,7 @@ module UsbDeviceCtrl (
         end
       end
       active_enumDef_DATA_TX_0 : begin
-        if(when_UsbDeviceCtrl_l587) begin
+        if(when_UsbDeviceCtrl_l606) begin
           if(dataTx_input_ready) begin
             active_stateNext = active_enumDef_DATA_TX_1;
           end
@@ -4366,22 +4387,22 @@ module UsbDeviceCtrl (
       end
       active_enumDef_HANDSHAKE_RX_0 : begin
         if(io_phy_rx_flow_valid) begin
-          if(when_UsbDeviceCtrl_l617) begin
+          if(when_UsbDeviceCtrl_l636) begin
             active_stateNext = active_enumDef_IDLE;
           end else begin
-            if(when_UsbDeviceCtrl_l619) begin
+            if(when_UsbDeviceCtrl_l638) begin
               active_stateNext = active_enumDef_IDLE;
             end else begin
               active_stateNext = active_enumDef_HANDSHAKE_RX_1;
             end
           end
         end
-        if(when_UsbDeviceCtrl_l625) begin
+        if(when_UsbDeviceCtrl_l644) begin
           active_stateNext = active_enumDef_IDLE;
         end
       end
       active_enumDef_HANDSHAKE_RX_1 : begin
-        if(when_UsbDeviceCtrl_l631) begin
+        if(when_UsbDeviceCtrl_l650) begin
           active_stateNext = active_enumDef_UPDATE_SETUP;
         end
         if(io_phy_rx_flow_valid) begin
@@ -4412,29 +4433,29 @@ module UsbDeviceCtrl (
     end
   end
 
-  assign when_UsbDeviceCtrl_l456 = (! token_ok);
-  assign when_UsbDeviceCtrl_l465 = (token_address == (regs_address_enable ? regs_address_value : 7'h00));
-  assign when_UsbDeviceCtrl_l468 = (token_address < 7'h04);
-  assign when_UsbDeviceCtrl_l470 = ((token_pid == 4'b1101) || (token_pid == 4'b0001));
-  assign when_UsbDeviceCtrl_l495 = (! ep_enable);
-  assign when_UsbDeviceCtrl_l498 = (token_endpoint != 4'b0000);
-  assign when_UsbDeviceCtrl_l513 = (((ep_head == 3'b000) || ep_stall) || regs_halt_hit);
-  assign when_UsbDeviceCtrl_l568 = (! desc_direction);
-  assign when_UsbDeviceCtrl_l646 = (transferFull && (! active_noUpdate));
-  assign when_UsbDeviceCtrl_l659 = (dataRx_hasError || active_dataRxOverrun);
-  assign when_UsbDeviceCtrl_l662 = (! active_noUpdate);
-  assign when_UsbDeviceCtrl_l665 = (dataRx_pid[2 : 0] != 3'b011);
-  assign when_UsbDeviceCtrl_l668 = ((! ep_stall) && (dataRx_pid[3] != ep_dataPhase));
-  assign when_UsbDeviceCtrl_l587 = (! transferFull);
-  assign when_UsbDeviceCtrl_l617 = (io_phy_rx_flow_payload[3 : 0] != (~ io_phy_rx_flow_payload[7 : 4]));
-  assign when_UsbDeviceCtrl_l619 = (io_phy_rx_flow_payload[3 : 0] != 4'b0010);
-  assign when_UsbDeviceCtrl_l625 = (rxTimer_timeout || ((! io_phy_rx_active) && io_phy_rx_active_regNext));
-  assign when_UsbDeviceCtrl_l631 = (! io_phy_rx_active);
-  assign when_UsbDeviceCtrl_l699 = (! token_isSetup);
-  assign when_UsbDeviceCtrl_l708 = ((! active_dataRxOverrun) || (desc_completionOnFull && desc_full));
-  assign when_UsbDeviceCtrl_l757 = (token_endpoint == 4'b0000);
-  assign when_UsbDeviceCtrl_l759 = (regs_address_trigger && token_isIn);
-  assign when_UsbDeviceCtrl_l764 = (! desc_full);
+  assign when_UsbDeviceCtrl_l475 = (! token_ok);
+  assign when_UsbDeviceCtrl_l484 = (token_address == (regs_address_enable ? regs_address_value : 7'h00));
+  assign when_UsbDeviceCtrl_l487 = (token_address < 7'h04);
+  assign when_UsbDeviceCtrl_l489 = ((token_pid == 4'b1101) || (token_pid == 4'b0001));
+  assign when_UsbDeviceCtrl_l514 = (! ep_enable);
+  assign when_UsbDeviceCtrl_l517 = (token_endpoint != 4'b0000);
+  assign when_UsbDeviceCtrl_l532 = (((ep_head == 3'b000) || ep_stall) || regs_halt_hit);
+  assign when_UsbDeviceCtrl_l587 = (! desc_direction);
+  assign when_UsbDeviceCtrl_l665 = (transferFull && (! active_noUpdate));
+  assign when_UsbDeviceCtrl_l678 = (dataRx_hasError || active_dataRxOverrun);
+  assign when_UsbDeviceCtrl_l681 = (! active_noUpdate);
+  assign when_UsbDeviceCtrl_l684 = (dataRx_pid[2 : 0] != 3'b011);
+  assign when_UsbDeviceCtrl_l687 = ((! ep_stall) && (dataRx_pid[3] != ep_dataPhase));
+  assign when_UsbDeviceCtrl_l606 = (! transferFull);
+  assign when_UsbDeviceCtrl_l636 = (io_phy_rx_flow_payload[3 : 0] != (~ io_phy_rx_flow_payload[7 : 4]));
+  assign when_UsbDeviceCtrl_l638 = (io_phy_rx_flow_payload[3 : 0] != 4'b0010);
+  assign when_UsbDeviceCtrl_l644 = (rxTimer_timeout || ((! io_phy_rx_active) && io_phy_rx_active_regNext));
+  assign when_UsbDeviceCtrl_l650 = (! io_phy_rx_active);
+  assign when_UsbDeviceCtrl_l718 = (! token_isSetup);
+  assign when_UsbDeviceCtrl_l729 = ((! active_dataRxOverrun) || (desc_completionOnFull && desc_full));
+  assign when_UsbDeviceCtrl_l778 = (token_endpoint == 4'b0000);
+  assign when_UsbDeviceCtrl_l780 = (regs_address_trigger && token_isIn);
+  assign when_UsbDeviceCtrl_l785 = (! desc_full);
   assign when_StateMachine_l253_1 = ((! (active_stateReg == active_enumDef_TOKEN)) && (active_stateNext == active_enumDef_TOKEN));
   assign when_StateMachine_l253_2 = ((! (active_stateReg == active_enumDef_DATA_RX)) && (active_stateNext == active_enumDef_DATA_RX));
   assign when_StateMachine_l253_3 = ((! (active_stateReg == active_enumDef_HANDSHAKE_RX_0)) && (active_stateNext == active_enumDef_HANDSHAKE_RX_0));
@@ -4452,7 +4473,7 @@ module UsbDeviceCtrl (
         end
       end
       main_enumDef_ACTIVE_INIT : begin
-        if(when_UsbDeviceCtrl_l793) begin
+        if(when_UsbDeviceCtrl_l814) begin
           main_stateNext = main_enumDef_ACTIVE;
         end
       end
@@ -4472,7 +4493,7 @@ module UsbDeviceCtrl (
     end
   end
 
-  assign when_UsbDeviceCtrl_l793 = (! io_phy_reset);
+  assign when_UsbDeviceCtrl_l814 = (! io_phy_reset);
   assign when_StateMachine_l253_4 = ((! (main_stateReg == main_enumDef_ACTIVE_INIT)) && (main_stateNext == main_enumDef_ACTIVE_INIT));
   assign when_StateMachine_l253_5 = ((! (main_stateReg == main_enumDef_ACTIVE)) && (main_stateNext == main_enumDef_ACTIVE));
   always @(posedge ctrlCd_clk or posedge ctrlCd_reset) begin
@@ -4509,14 +4530,14 @@ module UsbDeviceCtrl (
         _zz_io_ctrl_rsp_valid_1 <= (ctrl_rsp_valid && _zz_ctrl_rsp_ready);
       end
       io_phy_suspend_regNext <= io_phy_suspend;
-      if(when_UsbDeviceCtrl_l212) begin
+      if(when_UsbDeviceCtrl_l217) begin
         regs_interrupts_suspend <= 1'b1;
       end
       if(io_phy_resume_valid) begin
         regs_interrupts_resume <= 1'b1;
       end
       io_phy_power_regNext <= io_phy_power;
-      if(when_UsbDeviceCtrl_l214) begin
+      if(when_UsbDeviceCtrl_l219) begin
         regs_interrupts_disconnect <= 1'b1;
       end
       memory_internal_readCmd_regNext_valid <= memory_internal_readCmd_valid;
@@ -4530,7 +4551,7 @@ module UsbDeviceCtrl (
       if(dataTx_input_halfPipe_ready) begin
         dataTx_input_halfPipe_rValid <= dataTx_input_halfPipe_valid;
       end
-      if(when_UsbDeviceCtrl_l440) begin
+      if(when_UsbDeviceCtrl_l459) begin
         regs_halt_effective <= 1'b1;
       end
       if(when_BusSlaveFactory_l341) begin
@@ -4703,8 +4724,8 @@ module UsbDeviceCtrl (
             if(desc_interrupt) begin
               regs_interrupts_endpoints[_zz_regs_interrupts_endpoints] <= 1'b1;
             end
-            if(when_UsbDeviceCtrl_l757) begin
-              if(when_UsbDeviceCtrl_l759) begin
+            if(when_UsbDeviceCtrl_l778) begin
+              if(when_UsbDeviceCtrl_l780) begin
                 regs_address_enable <= 1'b1;
               end
               regs_address_trigger <= 1'b0;
@@ -4873,7 +4894,7 @@ module UsbDeviceCtrl (
       active_enumDef_TOKEN : begin
       end
       active_enumDef_ADDRESS_HIT : begin
-        if(!when_UsbDeviceCtrl_l456) begin
+        if(!when_UsbDeviceCtrl_l475) begin
           case(token_pid)
             4'b0101 : begin
               regs_frame <= token_data;
@@ -4889,9 +4910,9 @@ module UsbDeviceCtrl (
         ep_word <= memory_internal_readRsp_payload;
       end
       active_enumDef_EP_ANALYSE : begin
-        if(!when_UsbDeviceCtrl_l495) begin
+        if(!when_UsbDeviceCtrl_l514) begin
           if(token_isSetup) begin
-            if(!when_UsbDeviceCtrl_l498) begin
+            if(!when_UsbDeviceCtrl_l517) begin
               ep_word[15 : 4] <= 12'h001;
               desc_noDescriptorOffset <= 1'b1;
               desc_words_0[7 : 0] <= 8'h00;
@@ -4900,7 +4921,7 @@ module UsbDeviceCtrl (
               ep_word[3] <= 1'b0;
             end
           end else begin
-            if(when_UsbDeviceCtrl_l513) begin
+            if(when_UsbDeviceCtrl_l532) begin
               active_handshakePid <= ((ep_stall && (! regs_halt_hit)) ? 4'b1110 : 4'b1010);
               case(token_pid)
                 4'b0001 : begin
@@ -4930,18 +4951,18 @@ module UsbDeviceCtrl (
       end
       active_enumDef_DATA_RX : begin
         if(dataRx_data_valid) begin
-          if(when_UsbDeviceCtrl_l646) begin
+          if(when_UsbDeviceCtrl_l665) begin
             active_dataRxOverrun <= 1'b1;
           end
         end
       end
       active_enumDef_DATA_RX_ANALYSE : begin
-        if(!when_UsbDeviceCtrl_l659) begin
-          if(when_UsbDeviceCtrl_l662) begin
+        if(!when_UsbDeviceCtrl_l678) begin
+          if(when_UsbDeviceCtrl_l681) begin
             active_handshakePid <= 4'b0010;
           end
-          if(!when_UsbDeviceCtrl_l665) begin
-            if(when_UsbDeviceCtrl_l668) begin
+          if(!when_UsbDeviceCtrl_l684) begin
+            if(when_UsbDeviceCtrl_l687) begin
               active_noUpdate <= 1'b1;
               active_handshakePid <= 4'b0010;
             end
@@ -4962,8 +4983,8 @@ module UsbDeviceCtrl (
       active_enumDef_HANDSHAKE_RX_1 : begin
       end
       active_enumDef_UPDATE_SETUP : begin
-        if(when_UsbDeviceCtrl_l699) begin
-          if(when_UsbDeviceCtrl_l708) begin
+        if(when_UsbDeviceCtrl_l718) begin
+          if(when_UsbDeviceCtrl_l729) begin
             active_completion <= 1'b1;
           end
         end
@@ -5046,9 +5067,9 @@ module WishboneToBmb (
 
 endmodule
 
-//BufferCC_7 replaced by BufferCC
+//BufferCC_8 replaced by BufferCC
 
-//BufferCC_6 replaced by BufferCC
+//BufferCC_7 replaced by BufferCC
 
 module FlowCCByToggle_1 (
   input               io_input_valid,
@@ -5066,7 +5087,7 @@ module FlowCCByToggle_1 (
   wire                outputArea_flow_valid;
   reg                 outputArea_flow_m2sPipe_valid;
 
-  BufferCC_12 inputArea_target_buffercc (
+  BufferCC_13 inputArea_target_buffercc (
     .io_dataIn                (inputArea_target                    ), //i
     .io_dataOut               (inputArea_target_buffercc_io_dataOut), //o
     .ctrlCd_clk               (ctrlCd_clk                          ), //i
@@ -5098,9 +5119,9 @@ module FlowCCByToggle_1 (
 
 endmodule
 
-//BufferCC_5 replaced by BufferCC
+//BufferCC_6 replaced by BufferCC
 
-//BufferCC_4 replaced by BufferCC
+//BufferCC_5 replaced by BufferCC
 
 module PulseCCByToggle_1 (
   input               io_pulseIn,
@@ -5116,7 +5137,7 @@ module PulseCCByToggle_1 (
   wire                outArea_target;
   reg                 outArea_target_regNext;
 
-  BufferCC_12 inArea_target_buffercc (
+  BufferCC_13 inArea_target_buffercc (
     .io_dataIn                (inArea_target                    ), //i
     .io_dataOut               (inArea_target_buffercc_io_dataOut), //o
     .ctrlCd_clk               (ctrlCd_clk                       ), //i
@@ -5144,6 +5165,8 @@ module PulseCCByToggle_1 (
 
 
 endmodule
+
+//BufferCC_4 replaced by BufferCC_2
 
 //BufferCC_3 replaced by BufferCC_2
 
@@ -5208,7 +5231,7 @@ module FlowCCByToggle (
   reg                 outputArea_flow_m2sPipe_valid;
   (* async_reg = "true" *) reg        [7:0]    outputArea_flow_m2sPipe_payload;
 
-  BufferCC_12 inputArea_target_buffercc (
+  BufferCC_13 inputArea_target_buffercc (
     .io_dataIn                (inputArea_target                    ), //i
     .io_dataOut               (inputArea_target_buffercc_io_dataOut), //o
     .ctrlCd_clk               (ctrlCd_clk                          ), //i
@@ -5263,28 +5286,28 @@ module PulseCCByToggle (
   output              phyCd_reset_synchronized_1
 );
 
-  wire                bufferCC_16_io_dataIn;
-  wire                bufferCC_16_io_dataOut;
+  wire                bufferCC_17_io_dataIn;
+  wire                bufferCC_17_io_dataOut;
   wire                inArea_target_buffercc_io_dataOut;
   reg                 inArea_target;
   wire                phyCd_reset_synchronized;
   wire                outArea_target;
   reg                 outArea_target_regNext;
 
-  BufferCC_11 bufferCC_16 (
-    .io_dataIn   (bufferCC_16_io_dataIn ), //i
-    .io_dataOut  (bufferCC_16_io_dataOut), //o
+  BufferCC_12 bufferCC_17 (
+    .io_dataIn   (bufferCC_17_io_dataIn ), //i
+    .io_dataOut  (bufferCC_17_io_dataOut), //o
     .ctrlCd_clk  (ctrlCd_clk            ), //i
     .phyCd_reset (phyCd_reset           )  //i
   );
-  BufferCC_12 inArea_target_buffercc (
+  BufferCC_13 inArea_target_buffercc (
     .io_dataIn                (inArea_target                    ), //i
     .io_dataOut               (inArea_target_buffercc_io_dataOut), //o
     .ctrlCd_clk               (ctrlCd_clk                       ), //i
     .phyCd_reset_synchronized (phyCd_reset_synchronized         )  //i
   );
-  assign bufferCC_16_io_dataIn = (1'b0 ^ 1'b0);
-  assign phyCd_reset_synchronized = bufferCC_16_io_dataOut;
+  assign bufferCC_17_io_dataIn = (1'b0 ^ 1'b0);
+  assign phyCd_reset_synchronized = bufferCC_17_io_dataOut;
   assign outArea_target = inArea_target_buffercc_io_dataOut;
   assign io_pulseOut = (outArea_target ^ outArea_target_regNext);
   assign phyCd_reset_synchronized_1 = phyCd_reset_synchronized;
@@ -5323,9 +5346,9 @@ module StreamCCByToggle (
   input               phyCd_clk
 );
 
-  wire                bufferCC_16_io_dataIn;
+  wire                bufferCC_17_io_dataIn;
   wire                outHitSignal_buffercc_io_dataOut;
-  wire                bufferCC_16_io_dataOut;
+  wire                bufferCC_17_io_dataOut;
   wire                pushArea_target_buffercc_io_dataOut;
   wire                outHitSignal;
   wire                pushArea_hit;
@@ -5351,19 +5374,19 @@ module StreamCCByToggle (
   (* async_reg = "true" *) reg        [7:0]    popArea_stream_rData_fragment;
   wire                when_Stream_l370;
 
-  BufferCC_13 outHitSignal_buffercc (
+  BufferCC_14 outHitSignal_buffercc (
     .io_dataIn    (outHitSignal                    ), //i
     .io_dataOut   (outHitSignal_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                      ), //i
     .ctrlCd_reset (ctrlCd_reset                    )  //i
   );
-  BufferCC_14 bufferCC_16 (
-    .io_dataIn    (bufferCC_16_io_dataIn ), //i
-    .io_dataOut   (bufferCC_16_io_dataOut), //o
+  BufferCC_15 bufferCC_17 (
+    .io_dataIn    (bufferCC_17_io_dataIn ), //i
+    .io_dataOut   (bufferCC_17_io_dataOut), //o
     .phyCd_clk    (phyCd_clk             ), //i
     .ctrlCd_reset (ctrlCd_reset          )  //i
   );
-  BufferCC_15 pushArea_target_buffercc (
+  BufferCC_16 pushArea_target_buffercc (
     .io_dataIn                 (pushArea_target                    ), //i
     .io_dataOut                (pushArea_target_buffercc_io_dataOut), //o
     .phyCd_clk                 (phyCd_clk                          ), //i
@@ -5373,8 +5396,8 @@ module StreamCCByToggle (
   assign io_input_fire = (io_input_valid && io_input_ready);
   assign pushArea_accept = io_input_fire;
   assign io_input_ready = (pushArea_hit == pushArea_target);
-  assign bufferCC_16_io_dataIn = (1'b0 ^ 1'b0);
-  assign ctrlCd_reset_synchronized = bufferCC_16_io_dataOut;
+  assign bufferCC_17_io_dataIn = (1'b0 ^ 1'b0);
+  assign ctrlCd_reset_synchronized = bufferCC_17_io_dataOut;
   assign popArea_target = pushArea_target_buffercc_io_dataOut;
   assign popArea_stream_fire = (popArea_stream_valid && popArea_stream_ready);
   assign outHitSignal = popArea_hit;
@@ -5617,13 +5640,13 @@ module USBCRC5 (
 
 endmodule
 
-//BufferCC_8 replaced by BufferCC_12
+//BufferCC_9 replaced by BufferCC_13
 
-//BufferCC_9 replaced by BufferCC_12
+//BufferCC_10 replaced by BufferCC_13
 
-//BufferCC_10 replaced by BufferCC_12
+//BufferCC_11 replaced by BufferCC_13
 
-module BufferCC_12 (
+module BufferCC_13 (
   input               io_dataIn,
   output              io_dataOut,
   input               ctrlCd_clk,
@@ -5647,7 +5670,7 @@ module BufferCC_12 (
 
 endmodule
 
-module BufferCC_11 (
+module BufferCC_12 (
   input               io_dataIn,
   output              io_dataOut,
   input               ctrlCd_clk,
@@ -5671,7 +5694,7 @@ module BufferCC_11 (
 
 endmodule
 
-module BufferCC_15 (
+module BufferCC_16 (
   input               io_dataIn,
   output              io_dataOut,
   input               phyCd_clk,
@@ -5695,7 +5718,7 @@ module BufferCC_15 (
 
 endmodule
 
-module BufferCC_14 (
+module BufferCC_15 (
   input               io_dataIn,
   output              io_dataOut,
   input               phyCd_clk,
@@ -5719,7 +5742,7 @@ module BufferCC_14 (
 
 endmodule
 
-module BufferCC_13 (
+module BufferCC_14 (
   input               io_dataIn,
   output              io_dataOut,
   input               ctrlCd_clk,
