@@ -6,6 +6,7 @@
 #
 from typing import Any, Callable
 import cocotb
+from cocotb.triggers import ClockCycles
 from cocotb.binary import BinaryValue
 
 
@@ -115,6 +116,34 @@ def design_element(dut, name):
 
 def design_element_exists(dut, name) -> bool:
     return design_element(dut, name) is not None
+
+
+async def clockcycles_with_progress(dut,
+    total_ticks: int,
+    ticks_per_iteration: int,
+    progress: Callable[[int],str],
+    before: Callable[[int],str]
+) -> None:
+
+    assert total_ticks > 0
+    assert ticks_per_iteration > 0
+
+    ticks = 0
+    if total_ticks > ticks_per_iteration:
+        if before:
+            dut._log.info(before(0))
+
+        for i in range(0, int(total_ticks / ticks_per_iteration)):
+            await ClockCycles(dut.clk, ticks_per_iteration)
+            ticks += ticks_per_iteration
+            if progress:
+                dut._log.info(progress(ticks))
+
+        left = total_ticks - ticks
+        if left > 0:	# just in case there is a remainder
+            await ClockCycles(dut.clk, left)
+    elif total_ticks > 0:
+        await ClockCycles(dut.clk, total_ticks)
 
 
 def debug(dut, value: str, ele_name='DEBUG', mode: int = 8) -> None:
@@ -228,6 +257,8 @@ __all__ = [
     'design_element_internal',
     'design_element',
     'design_element_exists',
+
+    'clockcycles_with_progress',
 
     'debug',
 

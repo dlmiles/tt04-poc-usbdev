@@ -390,6 +390,20 @@ class UsbBitbang():
         else:
             await self.send_out_data0(payload, addr, endp, crc16)
 
+    async def send_in_data0(self, payload: Payload, addr: int = None, endp: int = None, crc16: int = None) -> None:
+        await self.send_token(self.IN, addr, endp)
+        await self.send_crc16_payload(self.DATA0, payload, crc16)
+
+    async def send_in_data1(self, payload: Payload, addr: int = None, endp: int = None, crc16: int = None) -> None:
+        await self.send_token(self.IN, addr, endp)
+        await self.send_crc16_payload(self.DATA1, payload, crc16)
+
+    async def send_in_data(self, payload: Payload, addr: int = None, endp: int = None, crc16: int = None) -> None:
+        if self.data1:
+            await self.send_in_data1(payload, addr, endp, crc16)
+        else:
+            await self.send_in_data0(payload, addr, endp, crc16)
+
 
 __all__ = [
     'UsbBitbang'

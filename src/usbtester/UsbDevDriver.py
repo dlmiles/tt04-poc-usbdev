@@ -76,7 +76,7 @@ class UsbDevDriver():
         # ENDPOINT#0
         await self.halt(endp=0)	# HALT EP=0
 
-        buf_ep0_desc = BUF_DESC0
+        buf_ep0_desc = BUF_DESC0_20
         buf_ep0_length = 20
         buf_ep0_eod = buf_ep0_desc + 12 + buf_ep0_length
         await self.bus.wb_write(buf_ep0_desc+0, 0x000f0000)	# code=INPROGRESS
@@ -90,7 +90,7 @@ class UsbDevDriver():
         # ENDPOINT#1
         await self.halt(endp=1) # HALT EP=1
 
-        buf_ep1_desc = BUF_DESC0 + 12 + 20  # 0x0040
+        buf_ep1_desc = BUF_DESC0_20 + 12 + 20  # 0x0040
         buf_ep1_length = 8
         buf_ep1_eod = buf_ep1_desc + 12 + buf_ep1_length
         assert buf_ep1_eod <= BUF_END, f"EP1 configuration puts end-of-data beyond end-of-buffer ({buf_ep1_eod} > {BUF_END})"

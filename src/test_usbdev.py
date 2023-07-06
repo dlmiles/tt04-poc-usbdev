@@ -20,7 +20,7 @@ from usbtester.UsbDevDriver import *
 from usbtester.UsbBitbang import *
 from usbtester.Payload import *
 #from usbtester.FSM import *
-import usbtester.RomReader
+#from usbtester.SignalOutput import *
 
 
 from test_tt2wb import test_tt2wb_raw, test_tt2wb_cooked
@@ -124,6 +124,14 @@ def resolve_GL_TEST():
     if 'GATES' in os.environ and os.environ['GATES'] == 'yes':
         gl_test = True
     return gl_test
+
+
+def run_this_test(default_value: bool = True) -> bool:
+    if 'CI' in os.environ and os.environ['CI'] != 'false':
+        return True	# always on for CI
+    if 'ALL' in os.environ and os.environ['ALL'] != 'false':
+        return True
+    return default_value
 
 
 def resolve_LOW_SPEED():
@@ -274,14 +282,9 @@ def monitor(dut, path: str, prefix: str = None) -> None:
             value = new_value
 
 
-
 ## FIXME fix the cocotb timebase for 100MHz and 48MHz (or 192MHz and 48MHz initially - done)
 ## FIXME add assert to confirm elapsed realtime
 ## FIXME test the ctrl/phy clocks can both be 48MHz, then try slower/faster/much-faster ctrl clocks
-
-EP_COUNT = 4
-ADDRESS_LENGTH = 84
-MAX_PACKET_LENGTH = 40
 
 @cocotb.test()
 async def test_usbdev(dut):
@@ -311,6 +314,8 @@ async def test_usbdev(dut):
         #depth = 1
 
     report_resolvable(dut, 'initial ', depth=depth, filter=exclude_re_path)
+
+    validate(dut)
 
     await ClockCycles(dut.clk, 1)
     dut.ui_in.value = 0
@@ -448,14 +453,14 @@ async def test_usbdev(dut):
 
     await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
 
-    for a in range(0, ADDRESS_LENGTH+1, 4):
+    for a in range(0, ADDRESS_LENGTH+4, 4):	# 4 bytes too far into undefined space
         i = a & 0xff
         d = ((i+3) << 24) | ((i+2) << 16) | ((i+1) << 8) | (i)
         await ttwb.exe_write(d, a)
 
     # This is probing the wishbone address space to find the end of the memory buffer
     end_of_buffer = -1
-    for a in range(0, ADDRESS_LENGTH+1, 4):
+    for a in range(0, ADDRESS_LENGTH+4, 4):
         i = a & 0xff
         expect = ((i+3) << 24) | ((i+2) << 16) | ((i+1) << 8) | (i)
         d = await ttwb.exe_read_BinaryValue(a)
@@ -464,7 +469,7 @@ async def test_usbdev(dut):
         elif end_of_buffer == -1:
             end_of_buffer = a	# stop at first non resolvable
     dut._log.info("END_OF_BUFFER = 0x{:04x} {}d".format(end_of_buffer, end_of_buffer))
-
+    assert ADDRESS_LENGTH == end_of_buffer, f"ADDRESS_LENGTH does not match detected END_OF_BUFFER {ADDRESS_LENGTH} != {end_of_buffer,}"
 
     await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
 
@@ -573,7 +578,7 @@ async def test_usbdev(dut):
         sim_timerLong_factor = 200
         ticks = int(reset_ticks / sim_timerLong_factor)	## ENABLE 1/200th
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-timerLong-200xspeedup (USB FULL_SPEED test mode) = {}".format(reset_ticks, ticks))
-        if 'CI' in os.environ and os.environ['CI'] == 'true':
+        if 'CI' in os.environ and os.environ['CI'] != 'false':
             dut._log.warning("You are building GDS for production but are using UsbDeviceTop.v with simulation modified timer values".format(reset_ticks, ticks))
             exit(1)	## failure ?
 
@@ -582,22 +587,18 @@ async def test_usbdev(dut):
         sim_timerLong_factor = 25
         ticks = int(reset_ticks / sim_timerLong_factor)	## ENABLE 1/25th
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-timerLong-25xspeedup (USB LOW_SPEED test mode) = {}".format(reset_ticks, ticks))
-        if 'CI' in os.environ and os.environ['CI'] == 'true':
+        if 'CI' in os.environ and os.environ['CI'] != 'false':
             dut._log.warning("You are building GDS for production but are using UsbDeviceTop.v with simulation modified timer values".format(reset_ticks, ticks))
             exit(1)	## failure ?
 
     #ticks = 0		## DISABLE
 
-    if ticks > 38400:
+    if ticks > 0:
         PER_ITER = 38400
-        dut._log.info("RESET ticks = {} ({}-per-iteration)".format(ticks, PER_ITER))
-        for i in range(0, int(ticks / PER_ITER)):
-            await ClockCycles(dut.clk, PER_ITER)
-            total_ticks = (i+1)*PER_ITER
-            dut._log.info("RESET ticks = {} of {} {:3d}%".format(total_ticks, ticks, int((total_ticks / ticks) * 100.0)))
-        await ClockCycles(dut.clk, int(ticks % PER_ITER)+1)	# just in case there is a remainder
-    elif ticks > 0:
-        await ClockCycles(dut.clk, ticks)
+        await clockcycles_with_progress(dut, ticks, PER_ITER,
+            lambda t: "RESET ticks = {} of {} {:3d}%".format(t, ticks, int((t / ticks) * 100.0)),
+            lambda t: "RESET ticks = {} ({}-per-iteration)".format(ticks, PER_ITER)
+        )
     else:
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SKIPPED".format(reset_ticks))
 
@@ -617,25 +618,25 @@ async def test_usbdev(dut):
     #assert elapsed_after_factor < tolmin, f"USB RESET wall-clock elapsed is too short {elapsed_after_factor} > {tolmin}"
     #assert elapsed_after_factor > tolmax, f"USB RESET wall-clock elapsed is too long {elapsed_after_factor} > {tolmax}"
 
+    assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+
     # REG_INTERRUPT also has 0x0001000 set for RESET
-    v = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert v & INTR_RESET != 0, f"REG_INTERRUPT expected to see: RESET bit set"
+    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+    assert data & INTR_RESET != 0, f"REG_INTERRUPT expected to see: RESET bit set"
     await ttwb.wb_write(REG_INTERRUPT, INTR_RESET, regwr)	# W1C
-    v = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    if v & INTR_RESET != 0:
-        dut._log.warning("REG_INTERRUPT expected to see: RESET bit clear {:08x}".format(v))
-    assert v & INTR_RESET == 0, f"REG_INTERRUPT expected to see: RESET bit clear"
+    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+    assert data & INTR_RESET == 0, f"REG_INTERRUPT expected to see: RESET bit clear"
 
     # FIXME understand the source of this interrupt (it seems RESET+DISCONNECT are raised at the same time)
     # REG_INTERRUPT also has 0x0010000 set for DISCONNECT
-    assert v & INTR_DISCONNECT != 0, f"REG_INTERRUPT expected to see: DISCONNECT bit set"
+    assert data & INTR_DISCONNECT != 0, f"REG_INTERRUPT expected to see: DISCONNECT bit set"
     await ttwb.wb_write(REG_INTERRUPT, INTR_DISCONNECT, regwr)	# W1C
-    v = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    if v & INTR_DISCONNECT != 0:
-        dut._log.warning("REG_INTERRUPT expected to see: DISCONNECT bit clear {:08x}".format(v))
-    assert v & INTR_DISCONNECT == 0, f"REG_INTERRUPT expected to see: DISCONNECT bit clear"
+    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+    assert data & INTR_DISCONNECT == 0, f"REG_INTERRUPT expected to see: DISCONNECT bit clear"
 
-    assert v == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{v:08x}"
+    assert data == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{data:08x}"
+
+    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
     ## Check FSM(main) state goes to ACTIVE_INIT
     assert fsm_state_expected(dut, 'main', 'ACTIVE_INIT')
@@ -738,23 +739,23 @@ async def test_usbdev(dut):
     await usb.set_idle()
 
     await ClockCycles(dut.clk, TICKS_PER_BIT-3)	# WFI
-
-    v = await ttwb.wb_read(REG_INTERRUPT)
-    assert v & INTR_EP0SETUP != 0, f"REG_INTERRUPT expected to see: EP0SETUP"
+    await ClockCycles(dut.clk, 3+TICKS_PER_BIT)
+    ## Manage interrupt and reset
+    assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+    data = await ttwb.wb_read(REG_INTERRUPT)
+    assert data & INTR_EP0SETUP != 0, f"REG_INTERRUPT expected to see: EP0SETUP bit set"
     await ttwb.wb_write(REG_INTERRUPT, INTR_EP0SETUP)	# UVM=W1C
-    v = await ttwb.wb_read(REG_INTERRUPT)
-    if v & INTR_EP0SETUP != 0:
-        dut._log.warning("REG_INTERRUPT expected to see: EP0SETUP bit clear {:08x}".format(v))
-    assert v & INTR_EP0SETUP == 0, f"REG_INTERRUPT expected to see: EP0SETUP bit clear"
-    assert v == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{v:08x}"
+    data = await ttwb.wb_read(REG_INTERRUPT)
+    assert data & INTR_EP0SETUP == 0, f"REG_INTERRUPT expected to see: EP0SETUP bit clear"
+    assert data == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{data:08x}"
 
     await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
 
     # Validate 8 bytes of SETUP made it into the buffer location
-    v = await ttwb.wb_read(REG_SETUP0)
-    assert v == setup[0], f"SETUP0 expected to see: SETUP payload+0 0x{setup[0]:08x} is 0x{v:08x}"
-    v = await ttwb.wb_read(REG_SETUP1)
-    assert v == setup[1], f"SETUP1 expected to see: SETUP payload+4 0x{setup[1]:08x} is 0x{v:08x}"
+    data = await ttwb.wb_read(REG_SETUP0)
+    assert data == setup[0], f"SETUP0 expected to see: SETUP payload+0 0x{setup[0]:08x} is 0x{data:08x}"
+    data = await ttwb.wb_read(REG_SETUP1)
+    assert data == setup[1], f"SETUP1 expected to see: SETUP payload+4 0x{setup[1]:08x} is 0x{data:08x}"
 
 
     await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
@@ -800,272 +801,301 @@ async def test_usbdev(dut):
 
     await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
 
-    ADDRESS = 0x000
+    ADDRESS = 0x00
+    ADDRESS_ALT = 0x00
     ENDPOINT = 0x0
     ENDPOINT_ALT = 0x1	# can not be EP0
 
     ####
-    #### 004 SETUP no data
+    #### 050 SETUP no data
     ####
 
-    debug(dut, '050_SETUP_TOKEN')
+    if run_this_test(True):
+        debug(dut, '050_SETUP_TOKEN')
 
-    # mimic a 12byte IN payload delivered over 2 packets
-    # setup device to respond to IN for addr=0x000 endp=0x0 with 8 bytes of payload
+        # mimic a 12byte IN payload delivered over 2 packets
+        # setup device to respond to IN for addr=0x000 endp=0x0 with 8 bytes of payload
 
-    await driver.halt(endp=ENDPOINT) # HALT EP=0
-    await ttwb.wb_write(BUF_DESC0, desc0(code=DESC0_INPROGRESS))
-    await ttwb.wb_write(BUF_DESC1, desc1(length=8))
-    await ttwb.wb_write(BUF_DESC2, desc2(direction=DESC2_OUT, interrupt=True))
-    await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0), max_packet_size=20))
-    await driver.unhalt(endp=ENDPOINT)
+        await driver.halt(endp=ENDPOINT) # HALT EP=0
+        await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
+        await ttwb.wb_write(BUF_DESC1_20, desc1(length=8))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True))
+        await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=20))
+        await driver.unhalt(endp=ENDPOINT)
 
-    await usb.send_token(usb.SETUP, addr=ADDRESS, endp=ENDPOINT, crc5=0x02) # explicit crc5 for a0/ep0
-    debug(dut, '051_SETUP_DATA0')
-    setup = (0x04030201, 0x08070605) # crc16=0x304f
-    await usb.send_crc16_payload(usb.DATA0, Payload.int32(*setup), crc16=0x304f) # explicit crc16
-    await usb.set_idle()
+        await usb.send_token(usb.SETUP, addr=ADDRESS, endp=ENDPOINT, crc5=0x02) # explicit crc5 for a0/ep0
+        debug(dut, '051_SETUP_DATA0')
+        setup = (0x04030201, 0x08070605) # crc16=0x304f
+        await usb.send_crc16_payload(usb.DATA0, Payload.int32(*setup), crc16=0x304f) # explicit crc16
+        await usb.set_idle()
 
-    # FULL_SPEED=18 LOW_SPEED=130+4
-    await ClockCycles(dut.clk, int((TICKS_PER_BIT/2)+2))	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+2=18
-    if LOW_SPEED:
-        await ClockCycles(dut.clk, 4)
-    ## Manage interrupt and reset
-    assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
-    data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
-    assert data & INTR_EP0SETUP != 0, f"REG_INTERRUPT expects EP0SETUP to fire {v:08x}"
-    await ttwb.wb_write(REG_INTERRUPT, INTR_EP0SETUP, regdesc)
-    data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
-    assert data & INTR_EP0SETUP == 0, f"REG_INTERRUPT expects EP0SETUP to clear {v:08x}"
-    assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
-    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        # FULL_SPEED=18 LOW_SPEED=130+4 (was 64)
+        await ClockCycles(dut.clk, int((TICKS_PER_BIT/2)+2))	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+2=18
+        if LOW_SPEED:
+            await ClockCycles(dut.clk, 4+16+16+16+12)	# CI need +4 more then local here ?
+        ## Manage interrupt and reset
+        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.valufe)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
+        assert data & INTR_EP0SETUP != 0, f"REG_INTERRUPT expects EP0SETUP to fire {data:08x}"
+        await ttwb.wb_write(REG_INTERRUPT, INTR_EP0SETUP, regdesc)
+        data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
+        assert data & INTR_EP0SETUP == 0, f"REG_INTERRUPT expects EP0SETUP to clear {data:08x}"
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
-    # Validate 8 bytes of SETUP made it into the buffer location
-    data = await ttwb.wb_read(REG_SETUP0, regdesc)
-    assert data == setup[0], f"SETUP0 expected to see: SETUP payload+0 0x{setup[0]:08x} is 0x{v:08x}"
-    data = await ttwb.wb_read(REG_SETUP1, regdesc)
-    assert data == setup[1], f"SETUP1 expected to see: SETUP payload+4 0x{setup[1]:08x} is 0x{v:08x}"
+        # Validate 8 bytes of SETUP made it into the buffer location
+        data = await ttwb.wb_read(REG_SETUP0, regdesc)
+        assert data == setup[0], f"SETUP0 expected to see: SETUP payload+0 0x{setup[0]:08x} is 0x{data:08x}"
+        data = await ttwb.wb_read(REG_SETUP1, regdesc)
+        assert data == setup[1], f"SETUP1 expected to see: SETUP payload+4 0x{setup[1]:08x} is 0x{data:08x}"
 
-    debug(dut, '052_SETUP_ACK')
+        debug(dut, '052_SETUP_ACK')
 
-    # FIXME check tx_state cycles and emits ACK
-    await ClockCycles(dut.clk, TICKS_PER_BIT*24)	# let TX run auto ACK
+        # FIXME check tx_state cycles and emits ACK
+        await ClockCycles(dut.clk, TICKS_PER_BIT*24)	# let TX run auto ACK
 
-    debug(dut, '053_SETUP_END')
+        debug(dut, '053_SETUP_END')
 
-    await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
+
 
     ####
-    #### 005  EP0 with IN (enumeration device-to-host response)
+    #### 060  EP0 with IN (enumeration device-to-host response)
     ####
 
-    debug(dut, '060_EP0_IN')
+    if run_this_test(True):
+        debug(dut, '060_EP0_IN')
 
-    # Setup driver with data in buffer and expect the driver to manage sending
-    # For example as a response to SETUP
-    await driver.halt(endp=ENDPOINT)
-    await ttwb.wb_write(BUF_DESC0, desc0(code=DESC0_INPROGRESS))
-    await ttwb.wb_write(BUF_DESC1, desc1(length=8))
-    await ttwb.wb_write(BUF_DESC2, desc2(direction=DESC2_IN, interrupt=True))
-    await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0), max_packet_size=8))
-    await ttwb.wb_write(BUF_DATA0, 0x14131211)
-    await ttwb.wb_write(BUF_DATA1, 0x18171615)
-    await driver.unhalt(endp=ENDPOINT)
+        # Setup driver with data in buffer and expect the driver to manage sending
+        # For example as a response to SETUP
+        await driver.halt(endp=ENDPOINT)
+        await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
+        await ttwb.wb_write(BUF_DESC1_20, desc1(length=8))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
+        await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
+        await ttwb.wb_write(BUF_DATA0_20, 0x14131211)
+        await ttwb.wb_write(BUF_DATA1_20, 0x18171615)
+        await driver.unhalt(endp=ENDPOINT)
 
-    await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)	# host sents IN calling for data
-    await usb.set_idle()
+        await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)	# host sents IN calling for data
+        await usb.set_idle()
 
-    debug(dut, '061_EP0_IN_TX_DATA0')
-    
-    # FIXME assert we saw request
-    
+        debug(dut, '061_EP0_IN_TX_DATA0')
 
-    await ClockCycles(dut.clk, TICKS_PER_BIT*8*13)	## wait for TX to finish
-    await ClockCycles(dut.clk, TICKS_PER_BIT*3)
-
-    # FIXME inject delay here to confirm timer limits against spec
-
-    debug(dut, '062_EP0_IN_RX_ACK')
-    await usb.send_handshake(usb.ACK)	# host ACKing
-    await usb.set_idle()
-
-    await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## wait for TX to finish
-
-    # Originally the interrupt did not fire just because the buffer was full.
-    # The the implementation expected the software to over provision a buffer size at least 1 byte longer, but
-    #  but to 16 byte granularity that 1 byte turns into 16 which isn't good for a resource constrained environments.
-    #
-    # IMHO That should an allowed condition, to fill the buffer exactly.
-    # The hardware has dataRxOverrun detection which is a proper reason for it not to fire,
-    #  it also has a mode desc.completionOnFull which should be more appropiately renamed to desc.completionOnOverrun
-    #  but IMHO it should at least mark an error occured that is visible to the driver.
-    #
-    assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
-    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
-    await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
-    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {v:08x}"
-    assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
-    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        # FIXME assert we saw request
 
 
-    data = await ttwb.wb_read(REG_EP0, regrd)
-    assert data & 0x00000008 != 0, f"REG_EP0 expected dataPhase to be updated {data:08x}"
-    data = await ttwb.wb_read(BUF_DESC0, lambda v,a: desc0_format(v))
-    assert data & 0x000003ff == 8, f"DESC0 expected offset to be 8"
-    ## code=SUCCESS
-    assert data & 0x000f0000 == 0x00000000, f"DESC0 expected code={data:08x}"
-    data = await ttwb.wb_read(BUF_DESC1, lambda v,a: desc1_format(v))
-    data = await ttwb.wb_read(BUF_DESC2, lambda v,a: desc2_format(v))
-    ## FIXME This was successful, but error handling indication to CPU could be better
+        await ClockCycles(dut.clk, TICKS_PER_BIT*8*13)	## wait for TX to finish
+        await ClockCycles(dut.clk, TICKS_PER_BIT*3)
 
-    debug(dut, '063_EP0_IN_END')
+        # FIXME inject delay here to confirm timer limits against spec
 
-    await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+        debug(dut, '062_EP0_IN_RX_ACK')
+        await usb.send_handshake(usb.ACK)	# host ACKing
+        await usb.set_idle()
+
+        await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## wait for TX to finish
+
+        debug(dut, '063_EP0_IN_CHECK')
+        # Originally the interrupt did not fire just because the buffer was full.
+        # The the implementation expected the software to over provision a buffer size at least 1 byte longer, but
+        #  but to 16 byte granularity that 1 byte turns into 16 which isn't good for a resource constrained environments.
+        #
+        # IMHO That should an allowed condition, to fill the buffer exactly.
+        # The hardware has dataRxOverrun detection which is a proper reason for it not to fire,
+        #  it also has a mode desc.completionOnFull which should be more appropiately renamed to desc.completionOnOverrun
+        #  but IMHO it should at least mark an error occured that is visible to the driver.
+        #
+        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
+        await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+
+
+        data = await ttwb.wb_read(REG_EP0, regrd)
+        assert data & 0x00000008 != 0, f"REG_EP0 expected dataPhase to be updated {data:08x}"
+        data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
+        assert data & 0x000003ff == 8, f"DESC0 expected offset to be 8"
+        ## code=SUCCESS
+        assert data & 0x000f0000 == 0x00000000, f"DESC0 expected code={data:08x}"
+        data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
+        data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
+        ## FIXME This was successful, but error handling indication to CPU could be better
+
+        debug(dut, '064_EP0_IN_END')
+
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
 
     ####
-    #### 006  EP0 with OUT (enumeration host-to-device command)
+    #### 070  EP0 with OUT (enumeration host-to-device command)
     ####
 
-    debug(dut, '070_EP0_OUT')
+    if run_this_test(True):
+        debug(dut, '070_EP0_OUT')
 
-    # Setup driver with data in buffer and expect the driver to manage receiving
-    # For example as a response to SETUP
-    await driver.halt(endp=ENDPOINT)
-    await ttwb.wb_write(BUF_DESC0, desc0(code=DESC0_INPROGRESS))
-    await ttwb.wb_write(BUF_DESC1, desc1(length=8))
-    await ttwb.wb_write(BUF_DESC2, desc2(direction=DESC2_OUT, interrupt=True))
-    await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0), max_packet_size=8))
-    #await ttwb.wb_write(BUF_DATA0, 0x94939291)
-    #await ttwb.wb_write(BUF_DATA1, 0x97969594)
-    await driver.unhalt(endp=ENDPOINT)
+        # Setup driver with data in buffer and expect the driver to manage receiving
+        # For example as a response to SETUP
+        await driver.halt(endp=ENDPOINT)
+        await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
+        await ttwb.wb_write(BUF_DESC1_20, desc1(length=8))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True))
+        await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
+        #await ttwb.wb_write(BUF_DATA0_20, 0x94939291)
+        #await ttwb.wb_write(BUF_DATA1_20, 0x97969594)
+        await driver.unhalt(endp=ENDPOINT)
 
-    await usb.send_token(usb.OUT, addr=ADDRESS, endp=ENDPOINT)	# host sents IN calling for data
+        await usb.send_token(usb.OUT, addr=ADDRESS, endp=ENDPOINT)	# host sents IN calling for data
 
-    debug(dut, '071_EP0_OUT_RX_DATA0')
+        debug(dut, '071_EP0_OUT_RX_DATA0')
 
-    payload = (0xfbfaf9f8, 0xfffefdfc)
-    await usb.send_crc16_payload(usb.DATA0, Payload.int32(*payload))	# host sends OUT calling for data
-    await usb.set_idle()
+        payload = (0xfbfaf9f8, 0xfffefdfc)
+        await usb.send_crc16_payload(usb.DATA0, Payload.int32(*payload))	# host sends OUT calling for data
+        await usb.set_idle()
 
-    await ClockCycles(dut.clk, 17)	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+1=17
-    assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
-    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
-    await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
-    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {v:08x}"
-    assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
-    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        await ClockCycles(dut.clk, 17)	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+1=17
+        if LOW_SPEED:
+            await ClockCycles(dut.clk, 7*16)
+        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
+        await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
-    data = await ttwb.wb_read(REG_EP0, regrd)
-    assert data & 0x00000008 != 0, f"REG_EP0 expected dataPhase to be updated {data:08x}"
-    data = await ttwb.wb_read(BUF_DESC0, lambda v,a: desc0_format(v))
-    assert data & 0x000003ff == 8, f"DESC0 expected offset to be 8"
-    assert data & 0x000f0000 == 0x00000000, f"DESC0 expected code={data:08x}"
-    data = await ttwb.wb_read(BUF_DESC1, lambda v,a: desc1_format(v))
-    data = await ttwb.wb_read(BUF_DESC2, lambda v,a: desc2_format(v))
+        data = await ttwb.wb_read(REG_EP0, regrd)
+        assert data & 0x00000008 != 0, f"REG_EP0 expected dataPhase to be updated {data:08x}"
+        data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
+        assert data & 0x000003ff == 8, f"DESC0 expected offset to be 8"
+        assert data & 0x000f0000 == 0x00000000, f"DESC0 expected code={data:08x}"
+        data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
+        data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
 
-    # Validate 8 bytes of PAYLOAD made it into the buffer location
-    data = await ttwb.wb_read(BUF_DATA0)
-    assert data == payload[0], f"PAYLOAD0 expected to see: payload+0 0x{payload[0]:08x} is 0x{v:08x}"
-    data = await ttwb.wb_read(BUF_DATA1)
-    assert data == payload[1], f"PAYLOAD1 expected to see: payload+4 0x{payload[1]:08x} is 0x{v:08x}"
+        # Validate 8 bytes of PAYLOAD made it into the buffer location
+        data = await ttwb.wb_read(BUF_DATA0_20)
+        assert data == payload[0], f"PAYLOAD0 expected to see: payload+0 0x{payload[0]:08x} is 0x{data:08x}"
+        data = await ttwb.wb_read(BUF_DATA1_20)
+        assert data == payload[1], f"PAYLOAD1 expected to see: payload+4 0x{payload[1]:08x} is 0x{data:08x}"
 
-    debug(dut, '072_EP0_OUT_TX_ACK')
+        debug(dut, '072_EP0_OUT_TX_ACK')
 
-    ## FIXME validate the PID=ACK auto-tx here
-    await ClockCycles(dut.clk, TICKS_PER_BIT*24)	## let TX run auto ACK
+        ## FIXME validate the PID=ACK auto-tx here
+        await ClockCycles(dut.clk, TICKS_PER_BIT*24)	## let TX run auto ACK
 
-    debug(dut, '073_EP0_OUT_END')
+        debug(dut, '073_EP0_OUT_CHECK')
 
-    await ClockCycles(dut.clk, TICKS_PER_BIT*16)
+        debug(dut, '074_EP0_OUT_END')
+
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)
+
+        ####
+        ####
+        ####
+
+        await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
+        await ttwb.wb_dump(REG_FRAME, 4)
+        await ttwb.wb_dump(REG_ADDRESS, 4)
+        await ttwb.wb_dump(REG_INTERRUPT, 4)
+        await ttwb.wb_dump(REG_HALT, 4)
+        await ttwb.wb_dump(REG_CONFIG, 4)
+        await ttwb.wb_dump(REG_INFO, 4)
+
+        # FIXME coroutine observing tx sending states, monitor/report in log
+
+        # FIXME check hardware generated interrupt/completion
+
+        ## observe ACK
+
+
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
     ####
-    ####
-    ####
-
-    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
-    await ttwb.wb_dump(REG_FRAME, 4)
-    await ttwb.wb_dump(REG_ADDRESS, 4)
-    await ttwb.wb_dump(REG_INTERRUPT, 4)
-    await ttwb.wb_dump(REG_HALT, 4)
-    await ttwb.wb_dump(REG_CONFIG, 4)
-    await ttwb.wb_dump(REG_INFO, 4)
-
-    # FIXME coroutine observing tx sending states, monitor/report in log
-
-    # FIXME check hardware generated interrupt/completion
-
-    ## observe ACK
-
-
-    await ClockCycles(dut.clk, TICKS_PER_BIT*32)
-
-    ####
-    #### 010 
+    #### 100
     ####
 
-    ## interrupt NAK
-    debug(dut, '100_IN_NAK')
+    if run_this_test(False):
+        ## interrupt NAK
+        debug(dut, '100_IN_NAK')
 
-    await driver.halt(endp=ENDPOINT) # HALT EP=0
-    # FIXME randomize values here, set zero, 0xfffff, random to confirm DESC[012] contents do not matter (run the test 3 times)
-    await ttwb.wb_write(BUF_DESC0, desc0(code=DESC0_INPROGRESS))
-    await ttwb.wb_write(BUF_DESC1, desc1(length=0))
-    await ttwb.wb_write(BUF_DESC2, desc2(direction=DESC2_IN, interrupt=False))
-    # the key things for auto NAK generation are enable=True and head=0 (no descriptor, so no data)
-    await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(0), max_packet_size=0))
-    await driver.unhalt(endp=ENDPOINT)
+        await driver.halt(endp=ENDPOINT) # HALT EP=0
+        # FIXME randomize values here, set zero, 0xfffff, random to confirm DESC[012] contents do not matter (run the test 3 times)
+        await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
+        await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=False))
+        # the key things for auto NAK generation are enable=True and head=0 (no descriptor, so no data)
+        await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(0), max_packet_size=0))
+        await driver.unhalt(endp=ENDPOINT)
 
-    # USB interrupt (host driven endpoint polling)
-    await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)
-    await usb.set_idle()
+        # USB interrupt (host driven endpoint polling)
+        await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)
+        await usb.set_idle()
 
-    debug(dut, '101_IN_NAK_TX_NAK')
-    ## FIXME observe automatic NAK from hardware (as no descriptor is setup) but endpoint enabled
-    await ClockCycles(dut.clk, TICKS_PER_BIT*64)
-    await ClockCycles(dut.clk, TICKS_PER_BIT*12)
+        debug(dut, '101_IN_NAK_TX_NAK')
+        ## FIXME observe automatic NAK from hardware (as no descriptor is setup) but endpoint enabled
+        await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+        await ClockCycles(dut.clk, TICKS_PER_BIT*12)
 
-    debug(dut, '102_IN_NAK_END')
-    await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+
+        debug(dut, '102_IN_NAK_CHECK')
+
+
+        debug(dut, '103_IN_NAK_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+
 
     ####
     #### 011
     ####
 
-    ## interrupt ACK
-    debug(dut, '110_IN_ACK')
+    if run_this_test(False):
+        ## interrupt ACK
+        debug(dut, '110_IN_ACK')
 
-    await driver.halt(endp=ENDPOINT) # HALT EP=0
-    await ttwb.wb_write(BUF_DESC0, desc0(code=DESC0_INPROGRESS))
-    await ttwb.wb_write(BUF_DESC1, desc1(length=4))
-    await ttwb.wb_write(BUF_DESC2, desc2(direction=DESC2_IN, interrupt=True))
-    # This time we are enable=True and head!=0 (so the DESC[012] above is important
-    await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0), max_packet_size=4))
-    await ttwb.wb_write(BUF_DATA0, 0x0b0a0908)
-    await driver.unhalt(endp=ENDPOINT)
+        await driver.halt(endp=ENDPOINT) # HALT EP=0
+        await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
+        await ttwb.wb_write(BUF_DESC1_20, desc1(length=4))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
+        # This time we are enable=True and head!=0 (so the DESC[012] above is important
+        await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=4))
+        await ttwb.wb_write(BUF_DATA0_20, 0x0b0a0908)
+        await driver.unhalt(endp=ENDPOINT)
 
-    await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)
-    await usb.set_idle()
+        await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)
+        await usb.set_idle()
 
 
-    debug(dut, '111_IN_ACK_TX_ACK')
-    ## FIXME observe automatic ACK with data
-    await ClockCycles(dut.clk, TICKS_PER_BIT*64)
-    await ClockCycles(dut.clk, TICKS_PER_BIT*12)
+        debug(dut, '111_IN_ACK_TX_ACK')
+        ## FIXME observe automatic ACK with data
+        await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+        await ClockCycles(dut.clk, TICKS_PER_BIT*12)
 
-    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
-    await ttwb.wb_dump(REG_FRAME, 4)
-    await ttwb.wb_dump(REG_ADDRESS, 4)
-    await ttwb.wb_dump(REG_INTERRUPT, 4)
-    await ttwb.wb_dump(REG_HALT, 4)
-    await ttwb.wb_dump(REG_CONFIG, 4)
-    await ttwb.wb_dump(REG_INFO, 4)
 
-    debug(dut, '112_IN_ACK_END')
-    await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+        debug(dut, '112_IN_ACK_CHECK')
+
+        await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
+        await ttwb.wb_dump(REG_FRAME, 4)
+        await ttwb.wb_dump(REG_ADDRESS, 4)
+        await ttwb.wb_dump(REG_INTERRUPT, 4)
+        await ttwb.wb_dump(REG_HALT, 4)
+        await ttwb.wb_dump(REG_CONFIG, 4)
+        await ttwb.wb_dump(REG_INFO, 4)
+
+
+        debug(dut, '113_IN_ACK_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+
+
+    ###
+    ### 300 SETUP seq
+    ###
+
+
 
 
     ## FIXME confirm the hardwre is capable of auto-arming the same data
@@ -1093,14 +1123,17 @@ async def test_usbdev(dut):
     ### FIXME OUT packets for which no device buffer is ready, should generate a NAK by default ?
     ### FIXME the hardware appears to ACK data out of correct DATA PHASE, maybe it should NAK ?  but the h/w need to record this occured
 
-    ### FIXME PRE packets received when lowSpeed==False should mute out the receiver for timerLong==??? ?
 
 
     ###
     ### 500 IN with 8,16,32,64,512,1023,1024,MAX_BUFFER payload, ACK device response
     ###
 
-    for payload_len in [8,16,32,64,512,1023,1024,-1]:
+    payload_lengths = []
+    if run_this_test(False):
+        payload_lengths = [8,16,32,64,512,1023,1024,-1]
+
+    for payload_len in payload_lengths:
         if payload_len < 0:
             payload_len = MAX_PACKET_LENGTH
 
@@ -1149,11 +1182,11 @@ async def test_usbdev(dut):
 
         assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-        assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
+        assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {v:08x}"
-        assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
+        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
         assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
         # Validate expected descriptor state
@@ -1196,7 +1229,11 @@ async def test_usbdev(dut):
     ### 550 OUT with 8,16,32,64,512,1023,1024,MAX_BUFFER payload, ACK device response
     ###
 
-    for payload_len in [8,16,32,64,512,1023,1024,-1]:
+    payload_lengths = []
+    if run_this_test(False):
+        payload_lengths = [8,16,32,64,512,1023,1024,-1]
+
+    for payload_len in payload_lengths:
         if payload_len < 0:
             payload_len = MAX_PACKET_LENGTH
 
@@ -1244,11 +1281,11 @@ async def test_usbdev(dut):
 
         assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-        assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
+        assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {v:08x}"
-        assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
+        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
         assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
         # Validate expected descriptor state
@@ -1291,241 +1328,244 @@ async def test_usbdev(dut):
     ### 600 IN with zero-length payload, ACK device response
     ###
 
-    debug(dut, '600_IN_EMPTY')
+    if run_this_test(True):
+        debug(dut, '600_IN_EMPTY')
 
-    await driver.halt(endp=ENDPOINT) # HALT EP=0
-    await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
-    await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))	# EMPTY
-    await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
-    await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
-    await ttwb.wb_write(BUF_DATA0_20, 0xffffffff)
-    await driver.unhalt(endp=ENDPOINT)
+        await driver.halt(endp=ENDPOINT) # HALT EP=0
+        await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
+        await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))	# EMPTY
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
+        await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
+        await ttwb.wb_write(BUF_DATA0_20, 0xffffffff)
+        await driver.unhalt(endp=ENDPOINT)
 
-    await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)
-    await usb.set_idle()
+        await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)
+        await usb.set_idle()
 
-    debug(dut, '601_IN_EMPTY_TX_DATA0')
-    ## FIXME observe automatic tx with empty data
-    ## FIXME observe payload bytes ? and count ?
-    await ClockCycles(dut.clk, TICKS_PER_BIT*32)
-    await ClockCycles(dut.clk, TICKS_PER_BIT*12)
+        debug(dut, '601_IN_EMPTY_TX_DATA0')
+        ## FIXME observe automatic tx with empty data
+        ## FIXME observe payload bytes ? and count ?
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+        await ClockCycles(dut.clk, TICKS_PER_BIT*12)
 
-    debug(dut, '602_IN_EMPTY_RX_ACK')
-    await usb.send_handshake(usb.ACK)	# host ACKing
-    await usb.set_idle()
+        debug(dut, '602_IN_EMPTY_RX_ACK')
+        await usb.send_handshake(usb.ACK)	# host ACKing
+        await usb.set_idle()
 
-    await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## wait for RX to finish
+        await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## wait for RX to finish
 
-    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
-    await ttwb.wb_dump(REG_FRAME, 4)
-    await ttwb.wb_dump(REG_ADDRESS, 4)
-    await ttwb.wb_dump(REG_INTERRUPT, 4)
-    await ttwb.wb_dump(REG_HALT, 4)
-    await ttwb.wb_dump(REG_CONFIG, 4)
-    await ttwb.wb_dump(REG_INFO, 4)
+        await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
+        await ttwb.wb_dump(REG_FRAME, 4)
+        await ttwb.wb_dump(REG_ADDRESS, 4)
+        await ttwb.wb_dump(REG_INTERRUPT, 4)
+        await ttwb.wb_dump(REG_HALT, 4)
+        await ttwb.wb_dump(REG_CONFIG, 4)
+        await ttwb.wb_dump(REG_INFO, 4)
 
-    assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
-    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
-    await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
-    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {v:08x}"
-    assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
-    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
+        await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
-    # Validate expected descriptor state
-    data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
-    assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0"	# EMPTY
-    assert data & 0x000f0000 == 0x00000000,      f"DESC0.code expected code={data:08x}"
-    assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
-    data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
-    assert data & 0x0000fff0 == 0x00000000,      f"DESC1.next not as expected {data:08x}"
-    assert data & 0xffff0000 == 0x00000000,      f"DESC1.length not as expected {data:08x}"	# FIXME is this correct?
-    assert data & 0x0000000f == 0x00000000,      f"DESC1.unused not as expected {data:08x}"
-    data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
-    assert data & 0x00010000 == 0x00010000,      f"DESC2.direction not as expected {data:08x}"
-    assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
-    assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
-    assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
-    assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
+        # Validate expected descriptor state
+        data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
+        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0"	# EMPTY
+        assert data & 0x000f0000 == 0x00000000,      f"DESC0.code expected code={data:08x}"
+        assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
+        data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
+        assert data & 0x0000fff0 == 0x00000000,      f"DESC1.next not as expected {data:08x}"
+        assert data & 0xffff0000 == 0x00000000,      f"DESC1.length not as expected {data:08x}"	# FIXME is this correct?
+        assert data & 0x0000000f == 0x00000000,      f"DESC1.unused not as expected {data:08x}"
+        data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
+        assert data & 0x00010000 == 0x00010000,      f"DESC2.direction not as expected {data:08x}"
+        assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
+        assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
 
-    # Validate expected endpoint register state
-    data = await ttwb.wb_read(REG_EP0, regrd)
-    assert data & 0x00000001 == 0x00000001,      f"ENDP.enable not as expected {data:08x}"
-    assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
-    assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
-    assert data & 0x00000008 == 0x00000008,      f"ENDP.data_phase not as expected {data:08x}"
-    assert data & 0x0000fff0 == 0x00000000,      f"ENDP.head not as expected {data:08x}"
-    assert data & 0x00010000 == 0x00000000,      f"ENDP.isochronous not as expected {data:08x}"
-    assert data & 0xffc00000 == 0x02000000,      f"ENDP.max_packet_size not as expected {data:08x}"
-    assert data & 0x003e0000 == 0x00000000,      f"ENDP.unused not as expected {data:08x}"
+        # Validate expected endpoint register state
+        data = await ttwb.wb_read(REG_EP0, regrd)
+        assert data & 0x00000001 == 0x00000001,      f"ENDP.enable not as expected {data:08x}"
+        assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
+        assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
+        assert data & 0x00000008 == 0x00000008,      f"ENDP.data_phase not as expected {data:08x}"
+        assert data & 0x0000fff0 == 0x00000000,      f"ENDP.head not as expected {data:08x}"
+        assert data & 0x00010000 == 0x00000000,      f"ENDP.isochronous not as expected {data:08x}"
+        assert data & 0xffc00000 == 0x02000000,      f"ENDP.max_packet_size not as expected {data:08x}"
+        assert data & 0x003e0000 == 0x00000000,      f"ENDP.unused not as expected {data:08x}"
 
 
-    debug(dut, '603_IN_EMPTY_END')
-    await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+        debug(dut, '603_IN_EMPTY_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*64)
 
 
     ###
     ### 610 IN with zero-length payload, NAK device response
     ###
 
-    debug(dut, '610_IN_EMPTY')
+    if run_this_test(True):
+        debug(dut, '610_IN_EMPTY')
 
-    await driver.halt(endp=ENDPOINT) # HALT EP=0
-    await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
-    await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))	# EMPTY
-    await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
-    await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
-    await ttwb.wb_write(BUF_DATA0_20, 0xffffffff)
-    await driver.unhalt(endp=ENDPOINT)
+        await driver.halt(endp=ENDPOINT) # HALT EP=0
+        await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
+        await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))	# EMPTY
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
+        await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
+        await ttwb.wb_write(BUF_DATA0_20, 0xffffffff)
+        await driver.unhalt(endp=ENDPOINT)
 
-    await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)
-    await usb.set_idle()
+        await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)
+        await usb.set_idle()
 
-    debug(dut, '611_IN_EMPTY_TX_DATA0')
-    ## FIXME observe automatic tx with empty data
-    await ClockCycles(dut.clk, TICKS_PER_BIT*32)
-    await ClockCycles(dut.clk, TICKS_PER_BIT*12)
+        debug(dut, '611_IN_EMPTY_TX_DATA0')
+        ## FIXME observe automatic tx with empty data
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+        await ClockCycles(dut.clk, TICKS_PER_BIT*12)
 
-    debug(dut, '612_IN_EMPTY_RX_NAK')
-    await usb.send_handshake(usb.NAK)	# host NAKing
-    await usb.set_idle()
+        debug(dut, '612_IN_EMPTY_RX_NAK')
+        await usb.send_handshake(usb.NAK)	# host NAKing
+        await usb.set_idle()
 
-    await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## wait for RX to finish
+        await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## wait for RX to finish
 
-    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
-    await ttwb.wb_dump(REG_FRAME, 4)
-    await ttwb.wb_dump(REG_ADDRESS, 4)
-    await ttwb.wb_dump(REG_INTERRUPT, 4)
-    await ttwb.wb_dump(REG_HALT, 4)
-    await ttwb.wb_dump(REG_CONFIG, 4)
-    await ttwb.wb_dump(REG_INFO, 4)
+        await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
+        await ttwb.wb_dump(REG_FRAME, 4)
+        await ttwb.wb_dump(REG_ADDRESS, 4)
+        await ttwb.wb_dump(REG_INTERRUPT, 4)
+        await ttwb.wb_dump(REG_HALT, 4)
+        await ttwb.wb_dump(REG_CONFIG, 4)
+        await ttwb.wb_dump(REG_INFO, 4)
 
-    # No interrupt due to NAK
-    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"	# clear due to NAK
-    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    #assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
-    #await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
-    #data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {v:08x}"
-    assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
-    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        # No interrupt due to NAK
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"	# clear due to NAK
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        #assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
+        #await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
+        #data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
-    # Validate expected descriptor state
-    data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
-    assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0"		# EMPTY
-    assert data & 0x000f0000 == 0x000f0000,      f"DESC0.code expected code={data:08x}"		# TODO indication of NAK?
-    assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
-    data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
-    assert data & 0x0000fff0 == 0x00000000,      f"DESC1.next not as expected {data:08x}"
-    assert data & 0xffff0000 == 0x00000000,      f"DESC1.length not as expected {data:08x}"	# FIXME is this correct?
-    assert data & 0x0000000f == 0x00000000,      f"DESC1.unused not as expected {data:08x}"
-    data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
-    assert data & 0x00010000 == 0x00010000,      f"DESC2.direction not as expected {data:08x}"
-    assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
-    assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
-    assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
-    assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
+        # Validate expected descriptor state
+        data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
+        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0"		# EMPTY
+        assert data & 0x000f0000 == 0x000f0000,      f"DESC0.code expected code={data:08x}"		# TODO indication of NAK?
+        assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
+        data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
+        assert data & 0x0000fff0 == 0x00000000,      f"DESC1.next not as expected {data:08x}"
+        assert data & 0xffff0000 == 0x00000000,      f"DESC1.length not as expected {data:08x}"	# FIXME is this correct?
+        assert data & 0x0000000f == 0x00000000,      f"DESC1.unused not as expected {data:08x}"
+        data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
+        assert data & 0x00010000 == 0x00010000,      f"DESC2.direction not as expected {data:08x}"
+        assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
+        assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
 
-    # Validate expected endpoint register state
-    data = await ttwb.wb_read(REG_EP0, regrd)
-    assert data & 0x00000001 == 0x00000001,      f"ENDP.enable not as expected {data:08x}"
-    assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
-    assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
-    assert data & 0x00000008 == 0x00000000,      f"ENDP.data_phase not as expected {data:08x}"	# FIXME check this
-    assert data & 0x0000fff0 == 0x00000020,      f"ENDP.head not as expected {data:08x}"
-    assert data & 0x00010000 == 0x00000000,      f"ENDP.isochronous not as expected {data:08x}"
-    assert data & 0xffc00000 == 0x02000000,      f"ENDP.max_packet_size not as expected {data:08x}"
-    assert data & 0x003e0000 == 0x00000000,      f"ENDP.unused not as expected {data:08x}"
+        # Validate expected endpoint register state
+        data = await ttwb.wb_read(REG_EP0, regrd)
+        assert data & 0x00000001 == 0x00000001,      f"ENDP.enable not as expected {data:08x}"
+        assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
+        assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
+        assert data & 0x00000008 == 0x00000000,      f"ENDP.data_phase not as expected {data:08x}"	# FIXME check this
+        assert data & 0x0000fff0 == 0x00000020,      f"ENDP.head not as expected {data:08x}"
+        assert data & 0x00010000 == 0x00000000,      f"ENDP.isochronous not as expected {data:08x}"
+        assert data & 0xffc00000 == 0x02000000,      f"ENDP.max_packet_size not as expected {data:08x}"
+        assert data & 0x003e0000 == 0x00000000,      f"ENDP.unused not as expected {data:08x}"
 
 
-    debug(dut, '613_IN_EMPTY_END')
-    await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+        debug(dut, '613_IN_EMPTY_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*64)
 
 
     ###
     ### 620 IN with zero-length payload, STALL device response
     ###
 
-    debug(dut, '620_IN_EMPTY')
+    if run_this_test(True):
+        debug(dut, '620_IN_EMPTY')
 
-    await driver.halt(endp=ENDPOINT) # HALT EP=0
-    await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
-    await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))	# EMPTY
-    await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
-    await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
-    await ttwb.wb_write(BUF_DATA0_20, 0xffffffff)
-    await driver.unhalt(endp=ENDPOINT)
+        await driver.halt(endp=ENDPOINT) # HALT EP=0
+        await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
+        await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))	# EMPTY
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
+        await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
+        await ttwb.wb_write(BUF_DATA0_20, 0xffffffff)
+        await driver.unhalt(endp=ENDPOINT)
 
-    await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)
-    await usb.set_idle()
+        await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)
+        await usb.set_idle()
 
-    debug(dut, '621_IN_EMPTY_TX_DATA0')
-    ## FIXME observe automatic tx with empty data
-    await ClockCycles(dut.clk, TICKS_PER_BIT*32)
-    await ClockCycles(dut.clk, TICKS_PER_BIT*12)
+        debug(dut, '621_IN_EMPTY_TX_DATA0')
+        ## FIXME observe automatic tx with empty data
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+        await ClockCycles(dut.clk, TICKS_PER_BIT*12)
 
-    debug(dut, '622_IN_EMPTY_RX_STALL')
-    await usb.send_handshake(usb.STALL)	# host NAKing
-    await usb.set_idle()
+        debug(dut, '622_IN_EMPTY_RX_STALL')
+        await usb.send_handshake(usb.STALL)	# host NAKing
+        await usb.set_idle()
 
-    await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## wait for RX to finish
+        await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## wait for RX to finish
 
-    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
-    await ttwb.wb_dump(REG_FRAME, 4)
-    await ttwb.wb_dump(REG_ADDRESS, 4)
-    await ttwb.wb_dump(REG_INTERRUPT, 4)
-    await ttwb.wb_dump(REG_HALT, 4)
-    await ttwb.wb_dump(REG_CONFIG, 4)
-    await ttwb.wb_dump(REG_INFO, 4)
+        await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
+        await ttwb.wb_dump(REG_FRAME, 4)
+        await ttwb.wb_dump(REG_ADDRESS, 4)
+        await ttwb.wb_dump(REG_INTERRUPT, 4)
+        await ttwb.wb_dump(REG_HALT, 4)
+        await ttwb.wb_dump(REG_CONFIG, 4)
+        await ttwb.wb_dump(REG_INFO, 4)
 
-    # No interrupt due to STALL
-    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"	# clear due to STALL
-    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    #assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
-    #await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
-    #data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {v:08x}"
-    assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
-    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        # No interrupt due to STALL
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"	# clear due to STALL
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        #assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
+        #await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
+        #data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
-    # Validate expected descriptor state
-    data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
-    assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0"		# EMPTY
-    assert data & 0x000f0000 == 0x000f0000,      f"DESC0.code expected code={data:08x}"		# TODO indication of STALL?
-    assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
-    data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
-    assert data & 0x0000fff0 == 0x00000000,      f"DESC1.next not as expected {data:08x}"
-    assert data & 0xffff0000 == 0x00000000,      f"DESC1.length not as expected {data:08x}"	# FIXME is this correct?
-    assert data & 0x0000000f == 0x00000000,      f"DESC1.unused not as expected {data:08x}"
-    data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
-    assert data & 0x00010000 == 0x00010000,      f"DESC2.direction not as expected {data:08x}"
-    assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
-    assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
-    assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
-    assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
+        # Validate expected descriptor state
+        data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
+        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0"		# EMPTY
+        assert data & 0x000f0000 == 0x000f0000,      f"DESC0.code expected code={data:08x}"		# TODO indication of STALL?
+        assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
+        data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
+        assert data & 0x0000fff0 == 0x00000000,      f"DESC1.next not as expected {data:08x}"
+        assert data & 0xffff0000 == 0x00000000,      f"DESC1.length not as expected {data:08x}"	# FIXME is this correct?
+        assert data & 0x0000000f == 0x00000000,      f"DESC1.unused not as expected {data:08x}"
+        data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
+        assert data & 0x00010000 == 0x00010000,      f"DESC2.direction not as expected {data:08x}"
+        assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
+        assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
 
-    # Validate expected endpoint register state
-    data = await ttwb.wb_read(REG_EP0, regrd)
-    assert data & 0x00000001 == 0x00000001,      f"ENDP.enable not as expected {data:08x}"
-    assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
-    assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
-    assert data & 0x00000008 == 0x00000000,      f"ENDP.data_phase not as expected {data:08x}"	# FIXME check this
-    assert data & 0x0000fff0 == 0x00000020,      f"ENDP.head not as expected {data:08x}"
-    assert data & 0x00010000 == 0x00000000,      f"ENDP.isochronous not as expected {data:08x}"
-    assert data & 0xffc00000 == 0x02000000,      f"ENDP.max_packet_size not as expected {data:08x}"
-    assert data & 0x003e0000 == 0x00000000,      f"ENDP.unused not as expected {data:08x}"
+        # Validate expected endpoint register state
+        data = await ttwb.wb_read(REG_EP0, regrd)
+        assert data & 0x00000001 == 0x00000001,      f"ENDP.enable not as expected {data:08x}"
+        assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
+        assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
+        assert data & 0x00000008 == 0x00000000,      f"ENDP.data_phase not as expected {data:08x}"	# FIXME check this
+        assert data & 0x0000fff0 == 0x00000020,      f"ENDP.head not as expected {data:08x}"
+        assert data & 0x00010000 == 0x00000000,      f"ENDP.isochronous not as expected {data:08x}"
+        assert data & 0xffc00000 == 0x02000000,      f"ENDP.max_packet_size not as expected {data:08x}"
+        assert data & 0x003e0000 == 0x00000000,      f"ENDP.unused not as expected {data:08x}"
 
 
-    debug(dut, '623_IN_EMPTY_END')
-    await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+        debug(dut, '623_IN_EMPTY_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*64)
 
 
     ####
     #### 650 OUT with zero-length payload (ACK host response)
     ####
 
-    if True:
+    if run_this_test(True):
         debug(dut, '650_OUT_EMPTY')
 
         await driver.halt(endp=ENDPOINT) # HALT EP=0
@@ -1556,11 +1596,11 @@ async def test_usbdev(dut):
 
         assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-        assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
+        assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {v:08x}"
-        assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
+        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
         assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
         # Validate expected descriptor state
@@ -1599,7 +1639,7 @@ async def test_usbdev(dut):
     #### 660 OUT with zero-length payload (NAK host response)
     ####
 
-    if True:
+    if run_this_test(True):
         debug(dut, '660_OUT_EMPTY')
 
         await driver.halt(endp=ENDPOINT) # HALT EP=0
@@ -1630,11 +1670,11 @@ async def test_usbdev(dut):
 
         assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-        assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
+        assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {v:08x}"
-        assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
+        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
         assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
         # Validate expected descriptor state
@@ -1673,7 +1713,7 @@ async def test_usbdev(dut):
     #### 670 OUT with zero-length payload (STALL host response)
     ####
 
-    if True:
+    if run_this_test(True):
         debug(dut, '660_OUT_EMPTY')
 
         await driver.halt(endp=ENDPOINT) # HALT EP=0
@@ -1704,11 +1744,11 @@ async def test_usbdev(dut):
 
         assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"	# NOINT
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-        #assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {v:08x}"
+        #assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         #await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         #data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {v:08x}"
-        assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
+        assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
         assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
         # Validate expected descriptor state
@@ -1747,301 +1787,513 @@ async def test_usbdev(dut):
     #### 700 OUT with isochronous (confirm no ACK sent by us)
     ####
 
-    if LOW_SPEED:
-        dut._log.warning("LOW_SPEED USB spec does not support isochronous OUT transfer, but we will test them anyway")
+    if run_this_test(True):
+        if LOW_SPEED:
+            dut._log.warning("LOW_SPEED USB spec does not support isochronous OUT transfer, but we will test them anyway")
 
-    debug(dut, '700_ISO_OUT')
+        debug(dut, '700_ISO_OUT')
 
-    await driver.halt(endp=ENDPOINT_ALT) # HALT EP=1
-    await ttwb.wb_write(BUF_DESC0_40, desc0(code=DESC0_INPROGRESS))
-    await ttwb.wb_write(BUF_DESC1_40, desc1(length=8))
-    await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_OUT, interrupt=True))
-    await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), isochronous=True, max_packet_size=8))
-    await ttwb.wb_write(BUF_DATA0_40, 0x00000000)	# not needed by function, only for testing buffer is filled
-    await ttwb.wb_write(BUF_DATA1_40, 0x00000000)	# not needed by function, only for testing buffer is filled
-    await driver.unhalt(endp=ENDPOINT_ALT)
+        await driver.halt(endp=ENDPOINT_ALT) # HALT EP=1
+        await ttwb.wb_write(BUF_DESC0_40, desc0(code=DESC0_INPROGRESS))
+        await ttwb.wb_write(BUF_DESC1_40, desc1(length=8))
+        await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_OUT, interrupt=True))
+        await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), isochronous=True, max_packet_size=8))
+        await ttwb.wb_write(BUF_DATA0_40, 0x00000000)	# not needed by function, only for testing buffer is filled
+        await ttwb.wb_write(BUF_DATA1_40, 0x00000000)	# not needed by function, only for testing buffer is filled
+        await driver.unhalt(endp=ENDPOINT_ALT)
 
-    isopayload = Payload.int32(0x04030201, 0x08070605) # crc16=0x304f
-    await usb.send_out_data0(isopayload, addr=ADDRESS, endp=ENDPOINT_ALT)
-
-
-    debug(dut, '701_ISO_OUT_NO_TX_ACK')
-    ## FIXME make a delay, to then observe NO automatic ACK occured
-    await ClockCycles(dut.clk, TICKS_PER_BIT*64)
-    await ClockCycles(dut.clk, TICKS_PER_BIT*12)
-    await ClockCycles(dut.clk, TICKS_PER_BIT*128)
-
-    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
-    await ttwb.wb_dump(REG_FRAME, 4)
-    await ttwb.wb_dump(REG_ADDRESS, 4)
-    await ttwb.wb_dump(REG_INTERRUPT, 4)
-    await ttwb.wb_dump(REG_HALT, 4)
-    await ttwb.wb_dump(REG_CONFIG, 4)
-    await ttwb.wb_dump(REG_INFO, 4)
-
-    assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
-    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert data & INTR_EP1 != 0, f"REG_INTERRUPT expects EP1 to fire {v:08x}"
-    await ttwb.wb_write(REG_INTERRUPT, INTR_EP1, regwr)
-    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert data & INTR_EP1 == 0, f"REG_INTERRUPT expects EP1 to clear {v:08x}"
-    assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
-    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
-
-    # Validate expected descriptor state
-    data = await ttwb.wb_read(BUF_DESC0_40, lambda v,a: desc0_format(v))
-    assert data & 0x0000ffff == len(isopayload), f"DESC0.offset expected to see: {len(isopayload)}"
-    assert data & 0x000f0000 == 0x00000000,      f"DESC0.code expected code={data:08x}"
-    assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
-    data = await ttwb.wb_read(BUF_DESC1_40, lambda v,a: desc1_format(v))
-    assert data & 0x0000fff0 == 0x00000000,      f"DESC1.next not as expected {data:08x}"
-    assert data & 0xffff0000 == 0x00080000,      f"DESC1.length not as expected {data:08x}"
-    assert data & 0x0000000f == 0x00000000,      f"DESC1.unused not as expected {data:08x}"
-    data = await ttwb.wb_read(BUF_DESC2_40, lambda v,a: desc2_format(v))
-    assert data & 0x00010000 == 0x00000000,      f"DESC2.direction not as expected {data:08x}"
-    assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
-    assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
-    assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
-    assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
-
-    # Validate expected endpoint register state
-    data = await ttwb.wb_read(REG_EP1, regrd)
-    assert data & 0x00000001 == 0x00000001,      f"ENDP.enable not as expected {data:08x}"
-    assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
-    assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
-    assert data & 0x00000008 == 0x00000008,      f"ENDP.data_phase not as expected {data:08x}"
-    assert data & 0x0000fff0 == 0x00000000,      f"ENDP.head not as expected {data:08x}"
-    assert data & 0x00010000 == 0x00010000,      f"ENDP.isochronous not as expected {data:08x}"
-    assert data & 0xffc00000 == 0x02000000,      f"ENDP.max_packet_size not as expected {data:08x}"
-    assert data & 0x003e0000 == 0x00000000,      f"ENDP.unused not as expected {data:08x}"
-
-    # Validate 8 bytes of OUT payload made it into the buffer location
-    data = await ttwb.wb_read(BUF_DATA0_40)
-    assert data == isopayload.getitem32(0), f"PAYLOAD0 expected to see: payload+0 0x{isopayload.getitem32(0):08x} is 0x{data:08x}"
-    data = await ttwb.wb_read(BUF_DATA1_40)
-    assert data == isopayload.getitem32(1), f"PAYLOAD1 expected to see: payload+4 0x{isopayload.getitem32(1):08x} is 0x{data:08x}"
+        isopayload = Payload.int32(0x04030201, 0x08070605) # crc16=0x304f
+        await usb.send_out_data0(isopayload, addr=ADDRESS, endp=ENDPOINT_ALT)
 
 
-    debug(dut, '702_ISO_OUT_END')
-    await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+        debug(dut, '701_ISO_OUT_NO_TX_ACK')
+        ## FIXME make a delay, to then observe NO automatic ACK occured
+        await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+        await ClockCycles(dut.clk, TICKS_PER_BIT*12)
+        await ClockCycles(dut.clk, TICKS_PER_BIT*128)
+
+        await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
+        await ttwb.wb_dump(REG_FRAME, 4)
+        await ttwb.wb_dump(REG_ADDRESS, 4)
+        await ttwb.wb_dump(REG_INTERRUPT, 4)
+        await ttwb.wb_dump(REG_HALT, 4)
+        await ttwb.wb_dump(REG_CONFIG, 4)
+        await ttwb.wb_dump(REG_INFO, 4)
+
+        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_EP1 != 0, f"REG_INTERRUPT expects EP1 to fire {data:08x}"
+        await ttwb.wb_write(REG_INTERRUPT, INTR_EP1, regwr)
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_EP1 == 0, f"REG_INTERRUPT expects EP1 to clear {data:08x}"
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+
+        # Validate expected descriptor state
+        data = await ttwb.wb_read(BUF_DESC0_40, lambda v,a: desc0_format(v))
+        assert data & 0x0000ffff == len(isopayload), f"DESC0.offset expected to see: {len(isopayload)}"
+        assert data & 0x000f0000 == 0x00000000,      f"DESC0.code expected code={data:08x}"
+        assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
+        data = await ttwb.wb_read(BUF_DESC1_40, lambda v,a: desc1_format(v))
+        assert data & 0x0000fff0 == 0x00000000,      f"DESC1.next not as expected {data:08x}"
+        assert data & 0xffff0000 == 0x00080000,      f"DESC1.length not as expected {data:08x}"
+        assert data & 0x0000000f == 0x00000000,      f"DESC1.unused not as expected {data:08x}"
+        data = await ttwb.wb_read(BUF_DESC2_40, lambda v,a: desc2_format(v))
+        assert data & 0x00010000 == 0x00000000,      f"DESC2.direction not as expected {data:08x}"
+        assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
+        assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
+
+        # Validate expected endpoint register state
+        data = await ttwb.wb_read(REG_EP1, regrd)
+        assert data & 0x00000001 == 0x00000001,      f"ENDP.enable not as expected {data:08x}"
+        assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
+        assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
+        assert data & 0x00000008 == 0x00000008,      f"ENDP.data_phase not as expected {data:08x}"
+        assert data & 0x0000fff0 == 0x00000000,      f"ENDP.head not as expected {data:08x}"
+        assert data & 0x00010000 == 0x00010000,      f"ENDP.isochronous not as expected {data:08x}"
+        assert data & 0xffc00000 == 0x02000000,      f"ENDP.max_packet_size not as expected {data:08x}"
+        assert data & 0x003e0000 == 0x00000000,      f"ENDP.unused not as expected {data:08x}"
+
+        # Validate 8 bytes of OUT payload made it into the buffer location
+        data = await ttwb.wb_read(BUF_DATA0_40)
+        assert data == isopayload.getitem32(0), f"PAYLOAD0 expected to see: payload+0 0x{isopayload.getitem32(0):08x} is 0x{data:08x}"
+        data = await ttwb.wb_read(BUF_DATA1_40)
+        assert data == isopayload.getitem32(1), f"PAYLOAD1 expected to see: payload+4 0x{isopayload.getitem32(1):08x} is 0x{data:08x}"
+
+
+        debug(dut, '702_ISO_OUT_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*64)
 
 
     ####
     #### 750 IN with isochronous (confirm no ACK sent by us)
     ####
 
-    if LOW_SPEED:
-        dut._log.warning("LOW_SPEED USB spec does not support isochronous IN transfer, but we will test them anyway")
+    if run_this_test(True):
+        if LOW_SPEED:
+            dut._log.warning("LOW_SPEED USB spec does not support isochronous IN transfer, but we will test them anyway")
 
-    debug(dut, '750_ISO_IN')
+        debug(dut, '750_ISO_IN')
 
-    await driver.halt(endp=ENDPOINT_ALT) # HALT EP=1
-    await ttwb.wb_write(BUF_DESC0_40, desc0(code=DESC0_INPROGRESS))
-    await ttwb.wb_write(BUF_DESC1_40, desc1(length=8))
-    await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_IN, interrupt=True))
-    await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), isochronous=True, max_packet_size=8))
-    isopayload = Payload.int32(0xff0201ff, 0x0055aa00)
-    assert isopayload.getitem32(0) == 0xff0201ff
-    assert isopayload.getitem32(1) == 0x0055aa00	# confirm API is working
-    await ttwb.wb_write(BUF_DATA0_40, isopayload.getitem32(0))
-    await ttwb.wb_write(BUF_DATA1_40, isopayload.getitem32(1))
-    await driver.unhalt(endp=ENDPOINT_ALT)
+        await driver.halt(endp=ENDPOINT_ALT) # HALT EP=1
+        await ttwb.wb_write(BUF_DESC0_40, desc0(code=DESC0_INPROGRESS))
+        await ttwb.wb_write(BUF_DESC1_40, desc1(length=8))
+        await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_IN, interrupt=True))
+        await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), isochronous=True, max_packet_size=8))
+        isopayload = Payload.int32(0xff0201ff, 0x0055aa00)
+        assert isopayload.getitem32(0) == 0xff0201ff
+        assert isopayload.getitem32(1) == 0x0055aa00	# confirm API is working
+        await ttwb.wb_write(BUF_DATA0_40, isopayload.getitem32(0))
+        await ttwb.wb_write(BUF_DATA1_40, isopayload.getitem32(1))
+        await driver.unhalt(endp=ENDPOINT_ALT)
 
-    await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT_ALT)
-    await usb.set_idle()
+        await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT_ALT)
+        await usb.set_idle()
 
-    debug(dut, '751_ISO_IN_TX_IN')
-    ## FIXME observe auto tx_state with payload
-    await ClockCycles(dut.clk, TICKS_PER_BIT*102)
-
-
-    debug(dut, '752_ISO_IN_NO_RX_ACK')
-    ## FIXME perform a delay, to then observe NO automatic ACK occured
-    await ClockCycles(dut.clk, TICKS_PER_BIT*64)
-    await ClockCycles(dut.clk, TICKS_PER_BIT*12)
-
-    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
-    await ttwb.wb_dump(REG_FRAME, 4)
-    await ttwb.wb_dump(REG_ADDRESS, 4)
-    await ttwb.wb_dump(REG_INTERRUPT, 4)
-    await ttwb.wb_dump(REG_HALT, 4)
-    await ttwb.wb_dump(REG_CONFIG, 4)
-    await ttwb.wb_dump(REG_INFO, 4)
-
-    assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
-    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert data & INTR_EP1 != 0, f"REG_INTERRUPT expects EP1 to fire {v:08x}"
-    await ttwb.wb_write(REG_INTERRUPT, INTR_EP1, regwr)
-    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert data & INTR_EP1 == 0, f"REG_INTERRUPT expects EP1 to clear {v:08x}"
-    assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
-    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
-
-    # Validate expected descriptor state
-    data = await ttwb.wb_read(BUF_DESC0_40, lambda v,a: desc0_format(v))
-    assert data & 0x0000ffff == len(isopayload), f"DESC0.offset expected to see: {len(isopayload)}"
-    assert data & 0x000f0000 == 0x00000000,      f"DESC0.code expected code={data:08x}"
-    assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
-    data = await ttwb.wb_read(BUF_DESC1_40, lambda v,a: desc1_format(v))
-    assert data & 0x0000fff0 == 0x00000000,      f"DESC1.next not as expected {data:08x}"
-    assert data & 0xffff0000 == 0x00080000,      f"DESC1.length not as expected {data:08x}"
-    assert data & 0x0000000f == 0x00000000,      f"DESC1.unused not as expected {data:08x}"
-    data = await ttwb.wb_read(BUF_DESC2_40, lambda v,a: desc2_format(v))
-    assert data & 0x00010000 == 0x00010000,      f"DESC2.direction not as expected {data:08x}"
-    assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
-    assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
-    assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
-    assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
-
-    # Validate expected endpoint register state
-    data = await ttwb.wb_read(REG_EP1, regrd)
-    assert data & 0x00000001 == 0x00000001,      f"ENDP.enable not as expected {data:08x}"
-    assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
-    assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
-    assert data & 0x00000008 == 0x00000008,      f"ENDP.data_phase not as expected {data:08x}"
-    assert data & 0x0000fff0 == 0x00000000,      f"ENDP.head not as expected {data:08x}"
-    assert data & 0x00010000 == 0x00010000,      f"ENDP.isochronous not as expected {data:08x}"
-    assert data & 0xffc00000 == 0x02000000,      f"ENDP.max_packet_size not as expected {data:08x}"
-    assert data & 0x003e0000 == 0x00000000,      f"ENDP.unused not as expected {data:08x}"
-
-    # Validate 8 bytes of OUT payload made it into the buffer location
-    data = await ttwb.wb_read(BUF_DATA0_40)
-    assert data == isopayload.getitem32(0), f"PAYLOAD0 expected to see: payload+0 0x{isopayload.getitem32(0):08x} is 0x{data:08x}"
-    data = await ttwb.wb_read(BUF_DATA1_40)
-    assert data == isopayload.getitem32(1), f"PAYLOAD1 expected to see: payload+4 0x{isopayload.getitem32(1):08x} is 0x{data:08x}"
+        debug(dut, '751_ISO_IN_TX_IN')
+        ## FIXME observe auto tx_state with payload
+        await ClockCycles(dut.clk, TICKS_PER_BIT*102)
 
 
-    debug(dut, '753_ISO_IN_END')
-    await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+        debug(dut, '752_ISO_IN_NO_RX_ACK')
+        ## FIXME perform a delay, to then observe NO automatic ACK occured
+        await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+        await ClockCycles(dut.clk, TICKS_PER_BIT*12)
+
+        await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
+        await ttwb.wb_dump(REG_FRAME, 4)
+        await ttwb.wb_dump(REG_ADDRESS, 4)
+        await ttwb.wb_dump(REG_INTERRUPT, 4)
+        await ttwb.wb_dump(REG_HALT, 4)
+        await ttwb.wb_dump(REG_CONFIG, 4)
+        await ttwb.wb_dump(REG_INFO, 4)
+
+        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_EP1 != 0, f"REG_INTERRUPT expects EP1 to fire {data:08x}"
+        await ttwb.wb_write(REG_INTERRUPT, INTR_EP1, regwr)
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_EP1 == 0, f"REG_INTERRUPT expects EP1 to clear {data:08x}"
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+
+        # Validate expected descriptor state
+        data = await ttwb.wb_read(BUF_DESC0_40, lambda v,a: desc0_format(v))
+        assert data & 0x0000ffff == len(isopayload), f"DESC0.offset expected to see: {len(isopayload)}"
+        assert data & 0x000f0000 == 0x00000000,      f"DESC0.code expected code={data:08x}"
+        assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
+        data = await ttwb.wb_read(BUF_DESC1_40, lambda v,a: desc1_format(v))
+        assert data & 0x0000fff0 == 0x00000000,      f"DESC1.next not as expected {data:08x}"
+        assert data & 0xffff0000 == 0x00080000,      f"DESC1.length not as expected {data:08x}"
+        assert data & 0x0000000f == 0x00000000,      f"DESC1.unused not as expected {data:08x}"
+        data = await ttwb.wb_read(BUF_DESC2_40, lambda v,a: desc2_format(v))
+        assert data & 0x00010000 == 0x00010000,      f"DESC2.direction not as expected {data:08x}"
+        assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
+        assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
+
+        # Validate expected endpoint register state
+        data = await ttwb.wb_read(REG_EP1, regrd)
+        assert data & 0x00000001 == 0x00000001,      f"ENDP.enable not as expected {data:08x}"
+        assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
+        assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
+        assert data & 0x00000008 == 0x00000008,      f"ENDP.data_phase not as expected {data:08x}"
+        assert data & 0x0000fff0 == 0x00000000,      f"ENDP.head not as expected {data:08x}"
+        assert data & 0x00010000 == 0x00010000,      f"ENDP.isochronous not as expected {data:08x}"
+        assert data & 0xffc00000 == 0x02000000,      f"ENDP.max_packet_size not as expected {data:08x}"
+        assert data & 0x003e0000 == 0x00000000,      f"ENDP.unused not as expected {data:08x}"
+
+        # Validate 8 bytes of OUT payload made it into the buffer location
+        data = await ttwb.wb_read(BUF_DATA0_40)
+        assert data == isopayload.getitem32(0), f"PAYLOAD0 expected to see: payload+0 0x{isopayload.getitem32(0):08x} is 0x{data:08x}"
+        data = await ttwb.wb_read(BUF_DATA1_40)
+        assert data == isopayload.getitem32(1), f"PAYLOAD1 expected to see: payload+4 0x{isopayload.getitem32(1):08x} is 0x{data:08x}"
+
+
+        debug(dut, '753_ISO_IN_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*64)
 
 
     ####
     #### Never seen a SOF frame since reset so frameValid should still be 0
     ####
 
-    debug(dut, '800_SOF_frameValid_0')
+    if run_this_test(True):
+        debug(dut, '800_SOF_frameValid_0')
 
-    data = await ttwb.wb_read_BinaryValue(REG_FRAME)	# 12'b0xxxxxxxxxxx
-    assert extract_bit(data[0], 12) == False, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=0"
+        data = await ttwb.wb_read_BinaryValue(REG_FRAME)	# 12'b0xxxxxxxxxxx
+        assert extract_bit(data[0], 12) == False, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=0"
+
 
     ####
     #### SOF token with frame 0
     ####
 
-    debug(dut, '810_SOF_0000')
+    if run_this_test(True):
+        if LOW_SPEED:
+            dut._log.warning("LOW_SPEED USB spec does not support SOF, but we will test them anyway")
 
-    frame = 0
-    data = await ttwb.wb_read(REG_FRAME, regrd)	# 12'b0xxxxxxxxxxx
-    await usb.send_sof(frame=frame)
-    await usb.set_idle()
-    data = await ttwb.wb_read(REG_FRAME, regrd)
-    assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
-    assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
+        debug(dut, '810_SOF_0000')
 
-    debug(dut, '811_SOF_0000_END')
-    await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+        frame = 0
+        data = await ttwb.wb_read(REG_FRAME, regrd)	# 12'b0xxxxxxxxxxx
+        await usb.send_sof(frame=frame)
+        await usb.set_idle()
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
+        assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
+
+        debug(dut, '811_SOF_0000_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
 
     ####
     #### SOF token with frame 1
     ####
 
-    debug(dut, '820_SOF_0001')
+    if run_this_test(True):
+        if LOW_SPEED:
+            dut._log.warning("LOW_SPEED USB spec does not support SOF, but we will test them anyway")
 
-    frame = 1
-    data = await ttwb.wb_read(REG_FRAME, regrd)
-    await usb.send_sof(frame=frame)
-    await usb.set_idle()
-    data = await ttwb.wb_read(REG_FRAME, regrd)
-    assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
-    assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
+        debug(dut, '820_SOF_0001')
 
-    debug(dut, '821_SOF_0001_END')
-    await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+        frame = 1
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        await usb.send_sof(frame=frame)
+        await usb.set_idle()
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
+        assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
+
+        debug(dut, '821_SOF_0001_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
 
     ####
     #### SOF token with frame 2047
     ####
 
-    debug(dut, '830_SOF_2047')
+    if run_this_test(True):
+        if LOW_SPEED:
+            dut._log.warning("LOW_SPEED USB spec does not support SOF, but we will test them anyway")
 
-    frame = 2047
-    data = await ttwb.wb_read(REG_FRAME, regrd)
-    await usb.send_sof(frame=frame)
-    await usb.set_idle()
-    data = await ttwb.wb_read(REG_FRAME, regrd)
-    assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
-    assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
+        debug(dut, '830_SOF_2047')
 
-    debug(dut, '831_SOF_2047_END')
-    #await ClockCycles(dut.clk, TICKS_PER_BIT*32)
-    # minimal delay, confirm back-to-back decoding works
+        frame = 2047
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        await usb.send_sof(frame=frame)
+        await usb.set_idle()
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
+        assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
+
+        debug(dut, '831_SOF_2047_END')
+        #await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+        # minimal delay, confirm back-to-back decoding works
+
 
     ####
     #### SOF token with frame 42
     ####
 
-    debug(dut, '840_SOF_0042')
+    if run_this_test(True):
+        if LOW_SPEED:
+            dut._log.warning("LOW_SPEED USB spec does not support SOF, but we will test them anyway")
 
-    frame = 42
-    data = await ttwb.wb_read(REG_FRAME, regrd)
-    await usb.send_sof(frame=frame)
-    await usb.set_idle()
-    data = await ttwb.wb_read(REG_FRAME, regrd)
-    assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
-    assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
+        debug(dut, '840_SOF_0042')
 
-    debug(dut, '841_SOF_0042_END')
-    await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+        frame = 42
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        await usb.send_sof(frame=frame)
+        await usb.set_idle()
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
+        assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
 
-
-    ## FIXME target other addresses confirm we ignore
-    ## FIXME target other endpoints confirm we ignore (enable say endp=3 confirm we NAK) disable confirm we ignore
-    ## FIXME target other endpoint=15 (which we don't support always ignores) 
+        debug(dut, '841_SOF_0042_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
 
-    ## FIXME run another USB host-to-device RESET signalling
-    ## FIXME check state of driver reset any values
-        
+    ####
+    #### EOP idle
+    ####
+
+    if run_this_test(True):
+        debug(dut, '850_EOP_0000')
+
+        await usb.send_eop()
+        await usb.set_idle()
+
+        debug(dut, '851_EOP_0000_CHECK')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
+        debug(dut, '852_EOP_0000_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
+
+    ####
+    #### EOP idle
+    ####
+
+    if run_this_test(True):
+        debug(dut, '860_EOP_0001')
+
+        await usb.send_eop()
+        await usb.set_idle()
+
+        debug(dut, '861_EOP_0001_CHECK')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
+        debug(dut, '862_EOP_0001_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
+
+    ####
+    #### EOP idle
+    ####
+
+    if run_this_test(True):
+        debug(dut, '870_EOP_0002')
+
+        await usb.send_eop()
+        await usb.set_idle()
+
+        debug(dut, '871_EOP_0002_CHECK')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
+        debug(dut, '872_EOP_0002_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
+
+    ####
+    #### EOP idle
+    ####
+
+    if run_this_test(True):
+        debug(dut, '880_EOP_0003')
+
+        await usb.send_eop()
+        await usb.set_idle()
+
+        debug(dut, '881_EOP_0003_CHECK')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
+        debug(dut, '882_EOP_0003_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
+
+
+
+    ####
+    #### Address / Endpoint rejection test (targetting other addresses)
+    ####
+
+    addr_list = []
+    if run_this_test(True):
+        for endp in range(0, EP_COUNT):
+            await driver.halt(endp=endp)
+            await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
+            await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))
+            await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
+            # ensure enabled (making it more likely for a bug to show up by hardware emitting a response when it should have ignored)
+            await ttwb.wb_write(REG_EP(endp), reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=32))
+            await driver.unhalt(endp=endp)
+
+        addr_list = [0, 1, 2, 80, 127]
+
+    for addr in addr_list:
+        for endp in [0, 1, 15]:
+            testid = 900
+            testname = f"_ADDR_IGNORE_{addr:03d}:{endp:02d}"
+
+            if addr == ADDRESS or addr == ADDRESS_ALT:
+                dut._log.warning("SKIP TEST: {} wants addr={} endp={} which targets our device".format(testname, addr, endp))
+                continue
+
+            debug(dut, f"{testid+0}{testname}")
+
+            payload_len = 8
+            await usb.send_in_data(Payload.random(payload_len), addr=addr, endp=endp)
+            await usb.set_idle()
+            await ClockCycles(dut.clk, TICKS_PER_BIT * (16 + (payload_len * 8)))
+
+            debug(dut, f"{testid+1}{testname}_WAIT")
+            await ClockCycles(dut.clk, TICKS_PER_BIT*24)	# Where response would be
+
+            debug(dut, f"{testid+2}{testname}_CHECK")
+            ## FIXME target other addresses confirm we ignore
+
+            data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+            assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+            assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+
+
+            debug(dut, f"{testid+3}{testname}_END")
+            await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
+    ####
+    #### Address / Endpoint process/ignore test (targetting our device)
+    ####
+
+    addr_list = []
+    if run_this_test(True):
+        for endp in range(0, EP_COUNT):
+            await driver.halt(endp=endp)
+            # ensure disabled (we are testing it ignores)
+            await ttwb.wb_write(REG_EP(endp), reg_endp(enable=False, head=addr_to_head(0), max_packet_size=0))	# DISABLE
+            await driver.unhalt(endp=endp)
+
+        addr_list = [ADDRESS, ADDRESS_ALT]
+
+    for addr in addr_list:
+        # target other endpoints confirm we ignore (enable say endp=3 confirm we NAK) disable confirm we ignore
+        #
+        # target other endpoint=15 (which we don't support always ignores)
+        for endp in [0, 1, 2, 3, 15, -1]:
+            if endp < 0:
+                endp = EP_COUNT	# one more than defined in the hardware
+
+            testid = 910
+            testname = f"_ENDP_IGNORE_{addr:03d}:{endp:02d}"
+
+            if addr != ADDRESS and addr != ADDRESS_ALT:
+                dut._log.warning("SKIP TEST: {} wants addr={} endp={} which does not target our device".format(testname, addr, endp))
+                continue
+
+            debug(dut, f"{testid+0}{testname}")
+
+            payload_len = 8
+            await usb.send_in_data(Payload.random(payload_len), addr=addr, endp=endp)
+            await usb.set_idle()
+            await ClockCycles(dut.clk, TICKS_PER_BIT * (16 + (payload_len * 8)))
+
+            debug(dut, f"{testid+1}{testname}_WAIT")
+            await ClockCycles(dut.clk, TICKS_PER_BIT*24)	# Where response would be
+
+            debug(dut, f"{testid+2}{testname}_CHECK")
+            ## FIXME target other addresses confirm we ignore
+            await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
+            data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+            assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+            assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+
+            debug(dut, f"{testid+3}{testname}_END")
+            await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
+
+
+    ####
+    #### USB host-to-device RESET signalling (after use)
+    ####
+
+    if run_this_test(True):
+        debug(dut, '970_USB_RESET')
+
+        ## Check FSM(main) state is currently ACTIVE
+        assert fsm_state_expected(dut, 'main', 'ACTIVE')
+
+        ## FIXME check on entry value set for usage, to validate on exit they were cleared
+
+        await usb.send_SE0()	# !D+ bit0 !D- bit1 = SE0 RESET
+
+        elapsed_start = get_sim_time(units='us')
+
+        ## auto-detect and also
+        (tolmin, tolmax) = usb_spec_wall_clock_tolerance(10000, LOW_SPEED)	# USB host-to-device reset is 10ms
+        dut._log.info("USB host-to-device signalling reset specification target is 10000us  min={} max={} after ppm clock tolerance {}".format(tolmin, tolmax, SPEED_MODE))
+
+        if ticks > 0:
+            PER_ITER = 38400
+            await clockcycles_with_progress(dut, ticks, PER_ITER,
+                lambda t: "RESET ticks = {} of {} {:3d}%".format(t, ticks, int((t / ticks) * 100.0)),
+                lambda t: "RESET ticks = {} ({}-per-iteration)".format(ticks, PER_ITER)
+            )
+        else:
+            dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SKIPPED".format(reset_ticks))
+
+        ## FIXME we want to know elapsed when interrupt triggered to confirm it is < tolmin and within a %
+        #elapsed_after_factor_for_interrrupt = fsm_interrupt()
+
+        elapsed_finish = get_sim_time(units='us')
+        elapsed = elapsed_finish - elapsed_start
+        elapsed_after_factor = elapsed * sim_timerLong_factor
+        # We need to trigger our reset detection somewhere close to the minimum (tolmin)
+        # But allow the implementation to work and be compatible with a time exceeding maximum (tolmax)
+
+        (tolmin, tolmax) = usb_spec_wall_clock_tolerance(10000, LOW_SPEED)	# USB host-to-device reset is 10ms
+        dut._log.info("ELAPSED = {:7f} x {} = {}us  (USB reset spec is 10000us  min={} max={})".format(elapsed, sim_timerLong_factor, elapsed_after_factor, tolmin, tolmax))
+
+        debug(dut, '970_USB_RESET_CHECK')
+
+        # REG_INTERRUPT also has 0x0001000 set for RESET
+        assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_RESET != 0, f"REG_INTERRUPT expected to see: RESET bit set"
+        await ttwb.wb_write(REG_INTERRUPT, INTR_RESET, regwr)	# W1C
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_RESET == 0, f"REG_INTERRUPT expected to see: RESET bit clear"
+
+        # REG_INTERRUPT does not have 0x0010000 set for DISCONNECT this time (unlike first reset)
+
+        assert data == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{data:08x}"
+
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+
+        ## Check FSM(main) state goes to ACTIVE_INIT
+        assert fsm_state_expected(dut, 'main', 'ACTIVE_INIT')
+
+        ## FIXME now we've dealt with interrupts check regs
+
+        debug(dut, '970_USB_RESET_END')
+        await usb.set_idle()
+
+
     debug(dut, '999_DONE')
 
-    ## This is what a real CDC dialog might look like after SETUP-default, SET_ADDRESS, SETUP-emeration
-    ## FIXME write a CDC enumeration sequence
-    ## FIXME write a CDC data transfer sequence
-
-    ## GET_LINE_ENCODING=0x21
-    ## EP0 Class Request IN  (0x21) 00 C2 01 00 00 00 08 (8N1 @115200 0x1c200 little-endian)
-    ## EP0 Class Request IN  (0x21) 00 C2 01 00 00 00 08
-
-    ## SET_LINE_ENCODING=0x20
-    ## EP0 Class Request OUT (0x20) 00 E1 00 00 00 00 08 (8N1 @57600 0xe100)
-    ## GET_LINE_ENCODING=0x21
-    ## EP0 Class Request IN  (0x21) 00 E1 00 00 00 00 08
-
-    ## SET_CONTROL_LINE_STATE=0x22
-    ## EP0 Class Request OUT (0x22) no payload (no-carrier, DTE-not-present)
-
-    ## SET_LINE_ENCODING=0x20
-    ## EP0 Class Request OUT (0x20) 00 E1 00 00 00 00 08
-    ## GET_LINE_ENCODING=0x21
-    ## EP0 Class Request IN  (0x21) 00 E1 00 00 00 00 08
-
-    ## SET_CONTROL_LINE_STATE=0x22
-    ## EP0 Class Request OUT (0x22) no payload
-
-    # Generate Transmited
-    ## EP1 IN tsn, A1 20 00 00 00 00 02 00 00 00 (A1=bmRequestType 20=SERIAL_STATE, wValue=0x00000000, 0x0002 length, 0x0000 = bitmap)
-    ##  expect ACK       ?? ?? ?? ?? <- wValue ?
-    ## EP1 IN tsn, A1 20 00 00 00 00 02 00 00 00
-    ##  expect ACK
-    
-    ## EP3 OUT tsn, 61  (host to device 1 byte)
-    ##  send ACK
-
-    ## EP2 IN tsn, 62  (device to host 1 byte)
-    ##  expect ACK
-
-    ## FIXME I assume EP2 needs to NAK when there is a poll with no new data
-    ## FIXME I need to lookup if EP1 interrupts on new data (also understand USB interrupt channel semantics)
 
     ## FIXME write a TX/RX/WriteEnable electrical channel capture (want to add bookmarks/label/anchros,
     ##    want to mark/capture a time window, want auto-trigger on next state transition, automatic chopping of data segment,
@@ -2056,15 +2308,7 @@ async def test_usbdev(dut):
     await ttwb.wb_dump(REG_INFO, 4)
 
 
-    await ClockCycles(dut.clk, 256)
-    await ClockCycles(dut.clk, 256)
-    await ClockCycles(dut.clk, 256)
-    await ClockCycles(dut.clk, 256)
-
-    await ClockCycles(dut.clk, 256)
-    await ClockCycles(dut.clk, 256)
-    await ClockCycles(dut.clk, 256)
-    await ClockCycles(dut.clk, 256)
+    await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
     # open rom.txt and run it
     #filename = "../rom.txt"

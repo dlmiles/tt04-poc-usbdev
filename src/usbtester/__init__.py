@@ -6,6 +6,12 @@
 from enum import IntEnum
 
 
+# FIXME auto-configure
+EP_COUNT = 4
+ADDRESS_LENGTH = 84
+MAX_PACKET_LENGTH = 40
+
+
 # Control Registers
 REG_FRAME = 0xff00
 REG_ADDRESS = 0xff04
@@ -31,7 +37,7 @@ REG_EP0 = 0x0000
 REG_EP1 = 0x0004
 REG_EP2 = 0x0008
 REG_EP3 = 0x000c
-REG_EPLAST = REG_EP3	## FIXME autoconfigure
+REG_EPLAST = REG_EP0 + (EP_COUNT*4)
 
 # FIXME move to register space 0xff18 0xff1c ?
 REG_SETUP0 = 0x0010
@@ -43,11 +49,6 @@ BUF_DESC0_20 = 0x0020
 BUF_DESC1_20 = 0x0024
 BUF_DESC2_20 = 0x0028
 
-# FIXME: remove/refactor original aliases
-BUF_DESC0 = BUF_DESC0_20
-BUF_DESC1 = BUF_DESC1_20
-BUF_DESC2 = BUF_DESC2_20
-
 BUF_DESC0_40 = 0x0040
 BUF_DESC1_40 = 0x0044
 BUF_DESC2_40 = 0x0048
@@ -57,16 +58,10 @@ BUF_DATA1_20 = 0x0030
 BUF_DATA2_20 = 0x0034
 BUF_DATA3_20 = 0x0038
 
-BUF_DATA0 = BUF_DATA0_20
-BUF_DATA1 = BUF_DATA1_20
-BUF_DATA2 = BUF_DATA2_20
-BUF_DATA3 = BUF_DATA3_20
-
 BUF_DATA0_40 = 0x004c
 BUF_DATA1_40 = 0x0050
 
-# FIXME find a way to auto-configure this
-BUF_END = 0x0054
+BUF_END = 0x0000 + ADDRESS_LENGTH
 
 # DESC0.code
 DESC0_INPROGRESS = 0xf
@@ -89,16 +84,39 @@ ADDR_DESC = {
     REG_SETUP0: "REG_SETUP0",
     REG_SETUP1: "REG_SETUP1",
 
-    BUF_DESC0: "BUF_DESC0",
-    BUF_DESC1: "BUF_DESC1",
-    BUF_DESC2: "BUF_DESC2",
-    BUF_DATA0: "BUF_DATA0",
-    BUF_DATA1: "BUF_DATA1",
-    BUF_DATA2: "BUF_DATA2",
-    BUF_DATA3: "BUF_DATA3",
+    BUF_DESC0_20: "BUF_DESC0_20",
+    BUF_DESC1_20: "BUF_DESC1_20",
+    BUF_DESC2_20: "BUF_DESC2_20",
+    BUF_DATA0_20: "BUF_DATA0_20",
+    BUF_DATA1_20: "BUF_DATA1_20",
+    BUF_DATA2_20: "BUF_DATA2_20",
+    BUF_DATA3_20: "BUF_DATA3_20",
+
+    BUF_DESC0_40: "BUF_DESC0_40",
+    BUF_DESC1_40: "BUF_DESC1_40",
+    BUF_DESC2_40: "BUF_DESC2_40",
+    BUF_DATA0_40: "BUF_DATA0_40",
+    BUF_DATA1_40: "BUF_DATA1_40",
+
     BUF_END: "BUF_END"
 }
 
+# This validate the design under test matches values here
+def validate(dut) -> bool:
+    # FIXME autoconfigure
+    #ele = design_element(dut, "")
+    #assert ele is None
+    #assert ele.value == EP_COUNT, f""
+
+    #ele = design_element(dut, "")
+    #assert ele is None
+    #assert ele.value == ADDRESS_LENGTH, f""
+
+    #ele = design_element(dut, "")
+    #assert ele is None
+    #assert ele.value == MAX_PACKET_LENGTH, f""
+
+    return True
 
 
 class Reg(IntEnum):
@@ -328,6 +346,12 @@ def regrd(value: int, addr: int) -> str:
     return addr_to_regdesc(addr, value, Reg.READ)
 
 
+def REG_EP(value: int) -> int:
+    assert value >= 0 and value <= 15, f"Invalid endpoint number: {value}"
+    assert value <= EP_COUNT, f"Invalid endpoint number: {value} (exceeds hardware limit {EP_COUNT})"
+    return REG_EP0 + (value * 4)
+
+
 def addr_to_head(addr: int) -> int:
     # If you are getting asserted here this alignment restriction is part of hardware design
     assert addr % 16 == 0, f"addr = 0x{addr:04x} is not modulus 16"
@@ -514,6 +538,12 @@ def format_reg_halt(value: int, addr: int = None) -> str:
 
 
 __all__ = [
+    'EP_COUNT',
+    'ADDRESS_LENGTH',
+    'MAX_PACKET_LENGTH',
+
+    'validate',
+
     'REG_FRAME',
     'REG_ADDRESS',
     'REG_INTERRUPT',
@@ -525,6 +555,8 @@ __all__ = [
     'REG_EP1',
     'REG_EP2',
     'REG_EP3',
+
+    'REG_EP',	# function
 
     'REG_SETUP0',
     'REG_SETUP1',
@@ -541,24 +573,17 @@ __all__ = [
 
     'BUF_START',
 
-    'BUF_DESC0',
-    'BUF_DESC1',
-    'BUF_DESC2',
-
     'BUF_DESC0_20',
     'BUF_DESC1_20',
     'BUF_DESC2_20',
+
     'BUF_DESC0_40',
     'BUF_DESC1_40',
     'BUF_DESC2_40',
 
-    'BUF_DATA0',
-    'BUF_DATA1',
-    'BUF_DATA2',
-    'BUF_DATA3',
-
     'BUF_DATA0_20',
     'BUF_DATA1_20',
+
     'BUF_DATA0_40',
     'BUF_DATA1_40',
 

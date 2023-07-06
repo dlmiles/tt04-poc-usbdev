@@ -121,6 +121,14 @@ class Payload():
             count -= 1
         return Payload(ba)
 
+    @staticmethod
+    def random(byte: int, count: int = 0) -> 'Payload':
+        ba = bytearray()
+        while count > 0:
+            ba.extend([random.randint(0x00, 0xff)])
+            count -= 1
+        return Payload(ba)
+
 
 
 __all__ = [
