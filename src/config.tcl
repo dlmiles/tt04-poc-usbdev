@@ -70,10 +70,10 @@ set ::env(RT_MAX_LAYER) {met4}
 #set ::env(FP_CORE_UTIL) 60
 
 # 10 is default
-set ::env(SYNTH_MAX_FANOUT) 5
+set ::env(SYNTH_MAX_FANOUT) 7
 
 # 25 is default
-set ::env(CTS_SINK_CLUSTERING_SIZE) 15
+set ::env(CTS_SINK_CLUSTERING_SIZE) 20
 
 # H / W
 set ::env(FP_ASPECT_RATIO) [expr 2/4]
