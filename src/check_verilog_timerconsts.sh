@@ -55,7 +55,7 @@ then
 		target__resume="0012a7"
 		target___reset="000947"
 		target_suspend="0002b7"
-	if [ "$ask" = "LS" ]
+	elif [ "$ask" = "LS" ]
 	then
 		target__resume="00953f"
 		target___reset="004a3f"
