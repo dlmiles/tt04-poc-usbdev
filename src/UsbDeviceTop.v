@@ -2128,10 +2128,10 @@ module UsbDeviceCtrl (
   reg [87:0] main_stateNext_string;
   `endif
 
-  reg [7:0] memory_ram_symbol0 [0:20];
-  reg [7:0] memory_ram_symbol1 [0:20];
-  reg [7:0] memory_ram_symbol2 [0:20];
-  reg [7:0] memory_ram_symbol3 [0:20];
+  reg [7:0] memory_ram_symbol0 [0:23];
+  reg [7:0] memory_ram_symbol1 [0:23];
+  reg [7:0] memory_ram_symbol2 [0:23];
+  reg [7:0] memory_ram_symbol3 [0:23];
   reg [7:0] _zz_memory_ramsymbol_read;
   reg [7:0] _zz_memory_ramsymbol_read_1;
   reg [7:0] _zz_memory_ramsymbol_read_2;
