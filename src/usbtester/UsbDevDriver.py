@@ -123,7 +123,7 @@ class UsbDevDriver():
         assert self.dut.dut.usb_dm_write == False, f"self.dut.dut.usb_dm_write = {str(self.dut.dut.usb_dm_write.value)}"
 
         # ENABLE INTERRUPTS (and activate line state)
-        await self.bus.wb_write(REG_CONFIG, reg_config(interrupt_enable_set=True, pullup_set=True)) # FIXME is this HS=True?
+        await self.bus.wb_write(REG_CONFIG, reg_config(interrupt_enable_set=True, pullup_set=True)) # FIXME is this FS=True?
 
         await ClockCycles(self.dut.clk, 28+4)	# need some ticks to observe update (clock-domain-crossing and back)
 

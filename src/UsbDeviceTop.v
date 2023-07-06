@@ -716,6 +716,8 @@ module UsbDevicePhyNative (
   wire                tx_frame_busy;
   wire                rx_p;
   wire                rx_m;
+  wire                rx_j;
+  wire                rx_k;
   reg                 rx_stuffingError;
   reg                 rx_waitSync;
   reg                 rx_decoder_state;
@@ -1218,6 +1220,8 @@ module UsbDevicePhyNative (
 
   assign rx_p = (rx_filter_io_filtred_dp && (! rx_filter_io_filtred_dm));
   assign rx_m = ((! rx_filter_io_filtred_dp) && rx_filter_io_filtred_dm);
+  assign rx_j = (io_ctrl_lowSpeed ? rx_m : rx_p);
+  assign rx_k = (io_ctrl_lowSpeed ? rx_p : rx_m);
   always @(*) begin
     rx_waitSync = 1'b0;
     case(rx_packet_stateReg)
@@ -1268,7 +1272,7 @@ module UsbDevicePhyNative (
   assign rx_eop_maxHit = (rx_eop_counter == rx_eop_maxThreshold);
   always @(*) begin
     rx_eop_hit = 1'b0;
-    if(rx_p) begin
+    if(rx_j) begin
       if(when_UsbDevicePhyNative_l279) begin
         rx_eop_hit = 1'b1;
       end
@@ -5601,6 +5605,7 @@ module UsbLsFsPhyFilter (
 );
 
   wire       [4:0]    _zz_timer_sampleDo;
+  wire                frontend_value;
   reg                 timer_clear;
   reg        [4:0]    timer_counter;
   wire       [4:0]    timer_counterLimit;
@@ -5612,6 +5617,7 @@ module UsbLsFsPhyFilter (
   wire                when_UsbDevicePhy_l101;
 
   assign _zz_timer_sampleDo = {1'd0, timer_sampleAt};
+  assign frontend_value = (io_lowSpeed ? io_usb_dm : io_usb_dp);
   always @(*) begin
     timer_clear = 1'b0;
     if(when_UsbDevicePhy_l101) begin
@@ -5626,7 +5632,7 @@ module UsbLsFsPhyFilter (
   assign when_UsbDevicePhy_l101 = ((io_usb_dp ^ io_usb_dp_regNext) || (io_usb_dm ^ io_usb_dm_regNext));
   assign io_filtred_dp = io_usb_dp;
   assign io_filtred_dm = io_usb_dm;
-  assign io_filtred_d = io_usb_dp;
+  assign io_filtred_d = frontend_value;
   assign io_filtred_sample = timer_sampleDo;
   assign io_filtred_se0 = ((! io_usb_dp) && (! io_usb_dm));
   always @(posedge phyCd_clk) begin

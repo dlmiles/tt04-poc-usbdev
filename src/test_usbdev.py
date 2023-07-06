@@ -124,6 +124,13 @@ def resolve_GL_TEST():
     return gl_test
 
 
+def resolve_LOW_SPEED():
+    low_speed = False
+    if 'LOW_SPEED' in os.environ:
+        low_speed = True
+    return low_speed
+
+
 def grep_file(filename: str, pattern1: str, pattern2: str) -> bool:
     # The rx_timerLong constants that specify counter units to achieve USB
     #  specification wall-clock timing requirements based on the 48MHz phyCd_clk.
@@ -481,7 +488,7 @@ async def test_usbdev(dut):
 
     await ClockCycles(dut.clk, 256)
 
-    LOW_SPEED = True #False
+    LOW_SPEED = resolve_LOW_SPEED() # False for FULL_SPEED (default), or True for LOW_SPEED
 
     PHY_CLK_FACTOR = 4	# 2 per edge
     OVERSAMPLE = 4	# 48MHz / 12MHz
@@ -499,7 +506,6 @@ async def test_usbdev(dut):
 
     if LOW_SPEED:
         await ttwb.wb_write(REG_CONFIG, 0x00000040)	# bit6 LOW_SPEED
-        await ClockCycles(dut.clk, TICKS_PER_BIT)	# not sure if needed FIXME test this
 
     ## Check FSM(main) state currently is ATTACHED
     assert fsm_state_expected(dut, 'main', 'ATTACHED')
@@ -514,7 +520,7 @@ async def test_usbdev(dut):
 
     await ClockCycles(dut.clk, 128)
 
-    usb = UsbBitbang(dut, TICKS_PER_BIT = TICKS_PER_BIT, LOW_SPEED=False) #LOW_SPEED)
+    usb = UsbBitbang(dut, TICKS_PER_BIT = TICKS_PER_BIT, LOW_SPEED=LOW_SPEED)
 
     debug(dut, '010_RESET')
 
@@ -540,7 +546,7 @@ async def test_usbdev(dut):
     ## egrep "rx_timerLong_reset =" UsbDeviceTop.v ## 23'h000947  1/200 FS (default SIM speedup)
     if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h000947"):
         ticks = int(reset_ticks / 200)	## ENABLE 1/200th
-        dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-200th (USB FULL_SPEED test mode) = {}".format(reset_ticks, ticks))
+        dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-timerLong-200xspeedup (USB FULL_SPEED test mode) = {}".format(reset_ticks, ticks))
         if 'CI' in os.environ and os.environ['CI'] == 'true':
             dut._log.warning("You are building GDS for production but are using UsbDeviceTop.v with simulation modified timer values".format(reset_ticks, ticks))
             exit(1)	## failure ?
@@ -548,7 +554,7 @@ async def test_usbdev(dut):
     ##                                             ## 23'h004a3f  1/25  LS
     if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h004a3f"):
         ticks = int(reset_ticks / 25)	## ENABLE 1/25th
-        dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-25th (USB LOW_SPEED test mode) = {}".format(reset_ticks, ticks))
+        dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-timerLong-25xspeedup (USB LOW_SPEED test mode) = {}".format(reset_ticks, ticks))
         if 'CI' in os.environ and os.environ['CI'] == 'true':
             dut._log.warning("You are building GDS for production but are using UsbDeviceTop.v with simulation modified timer values".format(reset_ticks, ticks))
             exit(1)	## failure ?

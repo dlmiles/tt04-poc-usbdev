@@ -30,9 +30,9 @@ class UsbBitbang():
 
     SE0 = 0x00		# !D+ bit0 !D- bit1 = SE0
     LS_J = DM		# !D+ bit0  D- bit1 = J   LS  IDLE
-    HS_J = DP		#  D+ bit0 !D- bit1 = J   HS  IDLE
+    FS_J = DP		#  D+ bit0 !D- bit1 = J   FS  IDLE
     LS_K = DP		#  D+ bit0 !D- bit1 = K   LS
-    HS_K = DM		# !D+ bit0  D- bit1 = K   HS
+    FS_K = DM		# !D+ bit0  D- bit1 = K   FS
 
     def __init__(self, dut, TICKS_PER_BIT: int, LOW_SPEED: bool = False):
         self.dut = dut
@@ -80,14 +80,14 @@ class UsbBitbang():
         if self.LOW_SPEED:
             await self.update(self.LS_J)
         else:
-            await self.update(self.HS_J)
+            await self.update(self.FS_J)
         await self.nrzi('J')
 
     async def send_K(self) -> None:
         if self.LOW_SPEED:
             await self.update(self.LS_K)
         else:
-            await self.update(self.HS_K)
+            await self.update(self.FS_K)
         await self.nrzi('K')
 
     async def send_0(self) -> None:
@@ -116,7 +116,7 @@ class UsbBitbang():
         if self.LOW_SPEED:
             await self.update(self.LS_J)	# aka IDLE
         else:
-            await self.update(self.HS_J)	# aka IDLE
+            await self.update(self.FS_J)	# aka IDLE
         self.reset('J')
 
     async def send_data(self, data: int, bits: int = 32) -> None:
