@@ -129,7 +129,7 @@ def grep_file(filename: str, pattern1: str, pattern2: str) -> bool:
     #  specification wall-clock timing requirements based on the 48MHz phyCd_clk.
     #
     # resume   HOST instigated, reverse polarity for > 20ms, then a LS EOP.
-    #            reverse polarity to what? (does this mean HS/LS)
+    #            reverse polarity to what? (does this mean FS/LS)
     #            LS EOP has a specific polarity
     #          DEVICE instigated (optional), send K state for >1ms and <15ms.
     #            Can only be starte after being idle >5ms
@@ -141,7 +141,7 @@ def grep_file(filename: str, pattern1: str, pattern2: str) -> bool:
     #          Timer 0x7403f looks to be 9.899ms @48MHz
     #
     # suspend  HOST send IDLE(J) for >= 3ms, is a suspend condition.
-    #          This is usually inhibited by SOF(HS) or KeepAlive/EOP(LS) every 1ms.
+    #          This is usually inhibited by SOF(FS) or KeepAlive/EOP(LS) every 1ms.
     #          Timer 0x21fbf looks to be 2.899ms @48MHz
     #
     # The SIM values are 1/200 to speed up simulation testing.
@@ -152,10 +152,17 @@ def grep_file(filename: str, pattern1: str, pattern2: str) -> bool:
     # -  assign rx_timerLong_resume = (rx_timerLong_counter == 23'h0e933f);
     # -  assign rx_timerLong_reset = (rx_timerLong_counter == 23'h07403f);
     # -  assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h021fbf);
-    # SIM
-    # +  assign rx_timerLong_resume = (rx_timerLong_counter == 23'h0012a7);
-    # +  assign rx_timerLong_reset = (rx_timerLong_counter == 23'h000947);
-    # +  assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h0002b7);
+    # SIM (FS 1/200)
+    #    assign rx_timerLong_resume = (rx_timerLong_counter == 23'h0012a7);
+    #    assign rx_timerLong_reset = (rx_timerLong_counter == 23'h000947);
+    #    assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h0002b7);
+    # SIM (LS 1/25),
+    #          tried at 1/40 but it is on the limit of firing a spurious suspend from specification packet
+    #          sizes with not enough gap between tests to allow us to setup testing comfortably
+    #    assign rx_timerLong_resume = (rx_timerLong_counter == 23'h00953f);
+    #    assign rx_timerLong_reset = (rx_timerLong_counter == 23'h004a3f);
+    #    assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h0015bf);
+    #
     with open(filename) as file_in:
         lines = []
         for line in file_in:
@@ -257,8 +264,15 @@ MAX_PACKET_LENGTH = 40
 async def test_usbdev(dut):
     if 'DEBUG' in os.environ and os.environ['DEBUG'] != 'false':
         dut._log.setLevel(cocotb.logging.DEBUG)
+
     dut._log.info("start")
-    clock = Clock(dut.clk, 10, units="us")
+
+    # The DUT uses a divider from the master clock at this time
+    # USB spec has a (FS) 2,500ppm and (LS) 15,000ppm timing requirement
+    #
+    # 192MHz = 5208.333ps  (48MHzx4)  this is 1/15624 out
+    #
+    clock = Clock(dut.clk, 5208, units="ps")	# 5208.3333  192MHz
     cocotb.start_soon(clock.start())
 
     dumpvars = ['CI', 'GL_TEST', 'FUNCTIONAL', 'USE_POWER_PINS', 'SIM', 'UNIT_DELAY', 'SIM_BUILD', 'GATES', 'ICARUS_BIN_DIR', 'COCOTB_RESULTS_FILE', 'TESTCASE', 'TOPLEVEL']
@@ -467,9 +481,11 @@ async def test_usbdev(dut):
 
     await ClockCycles(dut.clk, 256)
 
-    PHY_CLK_FACTOR = 8	# 4 per edge
+    LOW_SPEED = True #False
+
+    PHY_CLK_FACTOR = 4	# 2 per edge
     OVERSAMPLE = 4	# 48MHz / 12MHz
-    TICKS_PER_BIT = PHY_CLK_FACTOR * OVERSAMPLE
+    TICKS_PER_BIT = PHY_CLK_FACTOR * OVERSAMPLE if(not LOW_SPEED) else PHY_CLK_FACTOR * OVERSAMPLE * 8
 
     # Why are both the WriteEnable high for output at startup ?  With both D+/D- low.  SE0 condx
     dut._log.info("{} = {}".format(dut.dut.usb_dm_write._path, str(dut.dut.usb_dm_write.value)))
@@ -480,6 +496,10 @@ async def test_usbdev(dut):
     assert dut.dut.usb_dm_writeEnable.value == 0
     #assert dut.dut.usb_dp_write.value == 0
     assert dut.dut.usb_dp_writeEnable.value == 0
+
+    if LOW_SPEED:
+        await ttwb.wb_write(REG_CONFIG, 0x00000040)	# bit6 LOW_SPEED
+        await ClockCycles(dut.clk, TICKS_PER_BIT)	# not sure if needed FIXME test this
 
     ## Check FSM(main) state currently is ATTACHED
     assert fsm_state_expected(dut, 'main', 'ATTACHED')
@@ -494,9 +514,9 @@ async def test_usbdev(dut):
 
     await ClockCycles(dut.clk, 128)
 
-    usb = UsbBitbang(dut, TICKS_PER_BIT = TICKS_PER_BIT)
+    usb = UsbBitbang(dut, TICKS_PER_BIT = TICKS_PER_BIT, LOW_SPEED=False) #LOW_SPEED)
 
-    debug(dut, '002_RESET')
+    debug(dut, '010_RESET')
 
     #############################################################################################
     # Reset 10ms (ok this sequence works but takes too long to simulate, for test/debug)
@@ -517,10 +537,18 @@ async def test_usbdev(dut):
     if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h07403f"):
         ticks = reset_ticks	## ENABLE
 
-    ## egrep "rx_timerLong_reset =" UsbDeviceTop.v ## 23'h000947
+    ## egrep "rx_timerLong_reset =" UsbDeviceTop.v ## 23'h000947  1/200 FS (default SIM speedup)
     if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h000947"):
         ticks = int(reset_ticks / 200)	## ENABLE 1/200th
-        dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-200th = {}".format(reset_ticks, ticks))
+        dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-200th (USB FULL_SPEED test mode) = {}".format(reset_ticks, ticks))
+        if 'CI' in os.environ and os.environ['CI'] == 'true':
+            dut._log.warning("You are building GDS for production but are using UsbDeviceTop.v with simulation modified timer values".format(reset_ticks, ticks))
+            exit(1)	## failure ?
+
+    ##                                             ## 23'h004a3f  1/25  LS
+    if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h004a3f"):
+        ticks = int(reset_ticks / 25)	## ENABLE 1/25th
+        dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-25th (USB LOW_SPEED test mode) = {}".format(reset_ticks, ticks))
         if 'CI' in os.environ and os.environ['CI'] == 'true':
             dut._log.warning("You are building GDS for production but are using UsbDeviceTop.v with simulation modified timer values".format(reset_ticks, ticks))
             exit(1)	## failure ?
@@ -534,6 +562,7 @@ async def test_usbdev(dut):
             await ClockCycles(dut.clk, PER_ITER)
             total_ticks = (i+1)*PER_ITER
             dut._log.info("RESET ticks = {} of {} {:3d}%".format(total_ticks, ticks, int((total_ticks / ticks) * 100.0)))
+        await ClockCycles(dut.clk, int(ticks % PER_ITER)+1)	# just in case there is a remainder
     elif ticks > 0:
         await ClockCycles(dut.clk, ticks)
     else:
@@ -579,7 +608,7 @@ async def test_usbdev(dut):
     
     ##############################################################################################
 
-    debug(dut, '003_SETUP_BITBANG')
+    debug(dut, '020_SETUP_BITBANG')
 
     await usb.send_idle()
 
@@ -633,6 +662,15 @@ async def test_usbdev(dut):
 
     await usb.send_eop()	# EOP - SE0 SE0 J
 
+    # When the hardware does this we insert 2 bit times here (if we should be sending now)
+    # But accept a tolerance of upto 24 bit times for the rx to become active
+    # The 15 interations appear to be the limit before we start failing, the timing maybe
+    #  between the end of the SE0 condition (from EOP), until the rx decode a character, so
+    #  iterations are lost to allow for decode of the SYNC.
+    gap_limit = 15 if(LOW_SPEED) else 14
+    for i in range(0, gap_limit):	# LOW_SPEED=15 FULL_SPEED=14
+        await usb.send_idle()		# This demonstrates maximum tolerance at for TOKEN<>DATA gap
+
 
     await usb.send_sync()    # SYNC 8'b00000001 0x80 KJKJKJKK
 
@@ -670,6 +708,19 @@ async def test_usbdev(dut):
     assert v == setup[1], f"SETUP1 expected to see: SETUP payload+4 0x{setup[1]:08x} is 0x{v:08x}"
 
 
+    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
+    await ttwb.wb_dump(REG_FRAME, 4)
+    await ttwb.wb_dump(REG_ADDRESS, 4)
+    await ttwb.wb_dump(REG_INTERRUPT, 4)
+    await ttwb.wb_dump(REG_HALT, 4)
+    await ttwb.wb_dump(REG_CONFIG, 4)
+    await ttwb.wb_dump(REG_INFO, 4)
+
+    debug(dut, '020_SETUP_BITBANG_TX_ACK')
+
+    await ClockCycles(dut.clk, TICKS_PER_BIT*19)	# FIXME wait for auto ACK
+
+
     # FIXME check state machine for error (move these tests noise/corruption tests to another suite)
     # Checking state machine ERROR indication and recovery
 
@@ -686,15 +737,6 @@ async def test_usbdev(dut):
     # Send packet, maybe it worked, if not retransmit, confirm by now it always worked
 
 
-    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
-    await ttwb.wb_dump(REG_FRAME, 4)
-    await ttwb.wb_dump(REG_ADDRESS, 4)
-    await ttwb.wb_dump(REG_INTERRUPT, 4)
-    await ttwb.wb_dump(REG_HALT, 4)
-    await ttwb.wb_dump(REG_CONFIG, 4)
-    await ttwb.wb_dump(REG_INFO, 4)
-
-    await ClockCycles(dut.clk, 512)
     # FIXME write helper to check TX busy and wait idle (dont but now manage ability test observed states seen, and states never seen, to provide test true/false result)
     # Wait for TX of SYNC+ACK  (0x80 + 0xd2)
     
@@ -705,6 +747,10 @@ async def test_usbdev(dut):
     
     # FIXME test addr/endp filter rejection (after the addr setup and switch check filter)
 
+    debug(dut, '020_SETUP_BITBANG_END')
+
+    await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
+
     ADDRESS = 0x000
     ENDPOINT = 0x0
 
@@ -712,7 +758,7 @@ async def test_usbdev(dut):
     #### 004 SETUP no data
     ####
 
-    debug(dut, '004_SETUP_TOKEN')
+    debug(dut, '050_SETUP_TOKEN')
 
     # mimic a 12byte IN payload delivered over 2 packets
     # setup device to respond to IN for addr=0x000 endp=0x0 with 8 bytes of payload
@@ -725,12 +771,13 @@ async def test_usbdev(dut):
     await driver.unhalt(endp=ENDPOINT)
 
     await usb.send_token(usb.SETUP, addr=ADDRESS, endp=ENDPOINT, crc5=0x02) # explicit crc5 for a0/ep0
-    debug(dut, '004_SETUP_DATA0')
+    debug(dut, '051_SETUP_DATA0')
     setup = (0x04030201, 0x08070605) # crc16=0x304f
     await usb.send_crc16_payload(usb.DATA0, Payload.int32(*setup), crc16=0x304f) # explicit crc16
     await usb.send_idle()
 
-    await ClockCycles(dut.clk, 17)	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+1=17
+    # FULL_SPEED=17 LOW_SPEED=129
+    await ClockCycles(dut.clk, int((TICKS_PER_BIT/2)+1))	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+1=17
     ## Manage interrupt and reset
     assert signal_interrupts(dut) == True, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
     data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
@@ -747,20 +794,20 @@ async def test_usbdev(dut):
     data = await ttwb.wb_read(REG_SETUP1, regdesc)
     assert data == setup[1], f"SETUP1 expected to see: SETUP payload+4 0x{setup[1]:08x} is 0x{v:08x}"
 
-    debug(dut, '004_SETUP_ACK')
+    debug(dut, '052_SETUP_ACK')
 
     # FIXME check tx_state cycles and emits ACK
     await ClockCycles(dut.clk, TICKS_PER_BIT*24)	# let TX run auto ACK
 
-    debug(dut, '004_SETUP_END')
+    debug(dut, '053_SETUP_END')
 
     await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
-    
+
     ####
     #### 005  EP0 with IN (enumeration device-to-host response)
     ####
 
-    debug(dut, '005_EP0_IN')
+    debug(dut, '060_EP0_IN')
 
     # Setup driver with data in buffer and expect the driver to manage sending
     # For example as a response to SETUP
@@ -776,7 +823,7 @@ async def test_usbdev(dut):
     await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)	# host sents IN calling for data
     await usb.send_idle()
 
-    debug(dut, '005_EP0_IN_TX_DATA0')
+    debug(dut, '061_EP0_IN_TX_DATA0')
     
     # FIXME assert we saw request
     
@@ -786,15 +833,17 @@ async def test_usbdev(dut):
 
     # FIXME inject delay here to confirm timer limits against spec
 
-    debug(dut, '005_EP0_IN_RX_ACK')
+    debug(dut, '062_EP0_IN_RX_ACK')
     await usb.send_handshake(usb.ACK)	# host ACKing
     await usb.send_idle()
 
     await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## wait for TX to finish
 
-    ## FIXME check out why there is no interrupt raised for EP0 completion (maybe because we are not expected to operate here but on another address after SET_ADDRESS)
     # Originally the interrupt did not fire just because the buffer was full.
-    # But that should an allowed condition.
+    # The the implementation expected the software to over provision a buffer size at least 1 byte longer, but
+    #  but to 16 byte granularity that 1 byte turns into 16 which isn't good for a resource constrained environments.
+    #
+    # IMHO That should an allowed condition, to fill the buffer exactly.
     # The hardware has dataRxOverrun detection which is a proper reason for it not to fire,
     #  it also has a mode desc.completionOnFull which should be more appropiately renamed to desc.completionOnOverrun
     #  but IMHO it should at least mark an error occured that is visible to the driver.
@@ -808,9 +857,8 @@ async def test_usbdev(dut):
     assert data == 0, f"REG_INTERRUPT expects all clear {v:08x}"
     assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
 
-    ## FIXME this doesn't seem correct to me
+
     data = await ttwb.wb_read(REG_EP0, regrd)
-    # This is not useful
     assert data & 0x00000008 != 0, f"REG_EP0 expected dataPhase to be updated {data:08x}"
     data = await ttwb.wb_read(BUF_DESC0, lambda v,a: desc0_format(v))
     assert data & 0x000003ff == 8, f"DESC0 expected offset to be 8"
@@ -818,9 +866,9 @@ async def test_usbdev(dut):
     assert data & 0x000f0000 == 0x00000000, f"DESC0 expected code={data:08x}"
     data = await ttwb.wb_read(BUF_DESC1, lambda v,a: desc1_format(v))
     data = await ttwb.wb_read(BUF_DESC2, lambda v,a: desc2_format(v))
-    ## FIXME IMHO if this was successful, there is insufficient indication of that succcess
+    ## FIXME This was successful, but error handling indication to CPU could be better
 
-    debug(dut, '005_EP0_IN_END')
+    debug(dut, '063_EP0_IN_END')
 
     await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
@@ -828,7 +876,7 @@ async def test_usbdev(dut):
     #### 006  EP0 with OUT (enumeration host-to-device command)
     ####
 
-    debug(dut, '006_EP0_OUT')
+    debug(dut, '070_EP0_OUT')
 
     # Setup driver with data in buffer and expect the driver to manage receiving
     # For example as a response to SETUP
@@ -843,7 +891,7 @@ async def test_usbdev(dut):
 
     await usb.send_token(usb.OUT, addr=ADDRESS, endp=ENDPOINT)	# host sents IN calling for data
 
-    debug(dut, '006_EP0_OUT_RX_DATA0')
+    debug(dut, '071_EP0_OUT_RX_DATA0')
 
     payload = (0xfbfaf9f8, 0xfffefdfc)
     await usb.send_crc16_payload(usb.DATA0, Payload.int32(*payload))	# host sends OUT calling for data
@@ -873,12 +921,12 @@ async def test_usbdev(dut):
     data = await ttwb.wb_read(BUF_DATA1)
     assert data == payload[1], f"PAYLOAD1 expected to see: payload+4 0x{payload[1]:08x} is 0x{v:08x}"
 
-    debug(dut, '006_EP0_OUT_TX_ACK')
+    debug(dut, '072_EP0_OUT_TX_ACK')
 
     ## FIXME validate the PID=ACK auto-tx here
     await ClockCycles(dut.clk, TICKS_PER_BIT*24)	## let TX run auto ACK
 
-    debug(dut, '006_EP0_OUT_END')
+    debug(dut, '073_EP0_OUT_END')
 
     await ClockCycles(dut.clk, TICKS_PER_BIT*16)
 
@@ -895,7 +943,7 @@ async def test_usbdev(dut):
     await ttwb.wb_dump(REG_INFO, 4)
 
     # FIXME coroutine observing tx sending states, monitor/report in log
-    
+
     # FIXME check hardware generated interrupt/completion
 
     ## observe ACK
@@ -906,9 +954,9 @@ async def test_usbdev(dut):
     ####
     #### 010 
     ####
-    
+
     ## interrupt NACK
-    debug(dut, '010_IN_NAK')
+    debug(dut, '100_IN_NAK')
 
     await driver.halt(endp=ENDPOINT) # HALT EP=0
     # FIXME randomize values here, set zero, 0xfffff, random to confirm DESC[012] contents do not matter (run the test 3 times)
@@ -923,12 +971,12 @@ async def test_usbdev(dut):
     await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)
     await usb.send_idle()
 
-    debug(dut, '010_IN_NACK_TX_NACK')
+    debug(dut, '101_IN_NACK_TX_NACK')
     ## FIXME observe automatic NACK from hardware (as no descriptor is setup) but endpoint enabled
     await ClockCycles(dut.clk, TICKS_PER_BIT*64)
     await ClockCycles(dut.clk, TICKS_PER_BIT*12)
 
-    debug(dut, '010_IN_NACK_END')
+    debug(dut, '102_IN_NACK_END')
     await ClockCycles(dut.clk, TICKS_PER_BIT*64)
 
     ####
@@ -936,7 +984,7 @@ async def test_usbdev(dut):
     ####
 
     ## interrupt ACK
-    debug(dut, '011_IN_ACK')
+    debug(dut, '110_IN_ACK')
 
     await driver.halt(endp=ENDPOINT) # HALT EP=0
     await ttwb.wb_write(BUF_DESC0, desc0(code=DESC0_INPROGRESS))
@@ -951,12 +999,12 @@ async def test_usbdev(dut):
     await usb.send_idle()
 
 
-    debug(dut, '011_IN_ACK_TX_ACK')
+    debug(dut, '111_IN_ACK_TX_ACK')
     ## FIXME observe automatic ACK with data
     await ClockCycles(dut.clk, TICKS_PER_BIT*64)
     await ClockCycles(dut.clk, TICKS_PER_BIT*12)
 
-    debug(dut, '011_IN_ACK_END')
+    debug(dut, '112_IN_ACK_END')
     await ClockCycles(dut.clk, TICKS_PER_BIT*64)
 
     ## FIXME confirm the hardwre is capable of auto-arming the same data
@@ -966,7 +1014,7 @@ async def test_usbdev(dut):
 
 
 
-    ## FIXME check why after send_idle() (or really send_eop()) the line state does not look like HS idle (DP high, DM low)
+    ## FIXME check why after send_idle() (or really send_eop()) the line state does not look like FS idle (DP high, DM low)
     ##   this is a matter of the cocotb testing code not the DUT
 
 
@@ -983,12 +1031,21 @@ async def test_usbdev(dut):
 
 
 
+    ### FIXME IN with zero-length payload, ACK/NACK/STALL (device response)
+
+    ### FIXME OUT with zero-length payload, or device sends NACK/STALL, and host ACK (host response)
+
+
+    ### FIXME IN with isochronous (confirm no ACKs)
+    ### FIXME OUT with isochronous (confirm no ACKs)
+
+    ### FIXME test the ctrl/phy clocks can both be 48MHz, then try slower/faster/much-faster ctrl clocks
 
     ####
     #### SOF token with frame 0
     ####
 
-    debug(dut, '100_SOF_0000')
+    debug(dut, '800_SOF_0000')
 
     frame = 0
     data = await ttwb.wb_read(REG_FRAME, regrd)	# 11'bxxxxxxxxxxx
@@ -997,14 +1054,14 @@ async def test_usbdev(dut):
     data = await ttwb.wb_read(REG_FRAME, regrd)
     assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
 
-    debug(dut, '100_SOF_0000_END')
+    debug(dut, '801_SOF_0000_END')
     await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
     ####
     #### SOF token with frame 1
     ####
 
-    debug(dut, '101_SOF_0001')
+    debug(dut, '810_SOF_0001')
 
     frame = 1
     data = await ttwb.wb_read(REG_FRAME, regrd)
@@ -1013,14 +1070,14 @@ async def test_usbdev(dut):
     data = await ttwb.wb_read(REG_FRAME, regrd)
     assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
 
-    debug(dut, '101_SOF_0001_END')
+    debug(dut, '811_SOF_0001_END')
     await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
     ####
     #### SOF token with frame 2047
     ####
 
-    debug(dut, '103_SOF_2047')
+    debug(dut, '820_SOF_2047')
 
     frame = 2047
     data = await ttwb.wb_read(REG_FRAME, regrd)
@@ -1029,7 +1086,7 @@ async def test_usbdev(dut):
     data = await ttwb.wb_read(REG_FRAME, regrd)
     assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
 
-    debug(dut, '103_SOF_2047_END')
+    debug(dut, '821_SOF_2047_END')
     #await ClockCycles(dut.clk, TICKS_PER_BIT*32)
     # minimal delay, confirm back-to-back decoding works
 
@@ -1037,7 +1094,7 @@ async def test_usbdev(dut):
     #### SOF token with frame 42
     ####
 
-    debug(dut, '104_SOF_0042')
+    debug(dut, '830_SOF_0042')
 
     frame = 42
     data = await ttwb.wb_read(REG_FRAME, regrd)
@@ -1046,7 +1103,7 @@ async def test_usbdev(dut):
     data = await ttwb.wb_read(REG_FRAME, regrd)
     assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
 
-    debug(dut, '104_SOF_0042_END')
+    debug(dut, '831_SOF_0042_END')
     await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
 

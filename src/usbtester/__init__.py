@@ -12,7 +12,7 @@ REG_ADDRESS = 0xff04
 REG_INTERRUPT = 0xff08
 REG_HALT = 0xff0c
 REG_CONFIG = 0xff10
-REG_INFO = 0xff20
+REG_INFO = 0xff20 # aka CONFIG_WIDTH
 
 # INTERRUPTS
 INTR_EP0	= 0x00000001
@@ -111,14 +111,15 @@ def reg_frame_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
 def reg_address_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
     if mode is Reg.NONE:
         return None
-    l = list()
     if mode.has(Reg.WRITE):	# UVM=WO
+        l = list()
         l.append("address=0x{:02x} {}".format(value & 0x7f, value & 0x7f))
-    if mode.has(Reg.WRITE) and value & 1 << 8:
-        l.append("enable")	# UVM=WO
-    if mode.has(Reg.WRITE) and value & 1 << 18:
-        l.append("trigger")	# UVM=WO
-    return ', '.join(l)
+        if value & 1 << 8:
+            l.append("enable")
+        if value & 1 << 9:
+            l.append("trigger")
+        return ', '.join(l)
+    return None
 
 
 def reg_interrupt_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
@@ -147,18 +148,18 @@ def reg_halt_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
         return None
     # Many bits are UVM=WO
     l = list()
-    if mode.has(Reg.WRITE):	# show when enable is set
+    if mode.has(Reg.WRITE) and value & 1 << 4:	# show when enable is set
         l.append("endp={}".format(value & 0xf))
-    if mode.has(Reg.WRITE) or value & 1 << 4:
-        l.append("enable")
-    if mode.has(Reg.READ) or value & 1 << 5:
-        l.append("effective_enable")
+    if mode.has(Reg.WRITE) and value & 1 << 4:
+        l.append("enable-halt")
+    if mode.has(Reg.READ) and value & 1 << 5:
+        l.append("effective_enable-halt")
     if mode.has(Reg.WRITE):
         if value & 1 << 4:
             l.append("HALT")
         else:
             l.append("RUN")
-    nmenonic = "[{}]".format(format_reg_halt(value)) if(mode.has(Reg.READ, Reg.WRITE)) else ''
+    nmenonic = "[{}] ".format(format_reg_halt(value)) if(mode.has(Reg.READ, Reg.WRITE)) else ''
     return nmenonic + ', '.join(l)
 
 
@@ -179,17 +180,17 @@ def reg_config_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
     return None
 
 
-# All bits are UVM=WO
+# config_info
 def reg_info_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
     if mode is Reg.NONE:
         return None
-    if mode.has(Reg.WRITE):
+    if mode.has(Reg.READ, Reg.DEFAULT):	# UVM=RO
         l = list()
-        l.append("address=0x{:02x} {}".format(value & 0x7f, value & 0x7f))
-        if value & 1 << 8:
-            l.append("enable")
-        if value & 1 << 9:
-            l.append("trigger")
+        l.append("addressWidth=0x{:02x} {}".format(value & 0xff, value & 0xff))
+        l.append("epCount={}".format(((value >> 12) & 0xf) + 1))	# biased-by-1
+        l.append("maxPacketLength={}".format(((value >> 16) & 0x1ff) + 1))	# biased-by-1
+        l.append("spare={}".format((value >> 25) & 0x3))
+        l.append("startOfBufferByteOffset={} ({})".format((value >> 27) & 0x1f, ((value >> 27) & 0x1f) << 2))
         return ', '.join(l)
     return None
 
@@ -220,7 +221,10 @@ def reg_endp_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
         else:
             l.append("data_phase_0")
         head = (value >> 4) & 0xfff
-        l.append("head=0x{:x} @0x{:x}".format(head, head << 4))
+        if head == 0:
+            l.append("head=NONE")
+        else:
+            l.append("head=0x{:x} @0x{:x}".format(head, head << 4))
         if value & 1 << 16:
             l.append("isochronous")
         mps = (value >> 22) & 0x3ff

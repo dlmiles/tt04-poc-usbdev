@@ -50,7 +50,7 @@ module tt_um_dlmiles_tt04_poc_usbdev (
                 phyCd_resetNext <= 1'b0;
             end
             phyCd_clk <= ~phyCd_clk;
-            phyCd_counter <= phyCd_counter + 1;
+            phyCd_counter <= 2'b00;
         end else begin
             phyCd_counter <= phyCd_counter + 1;
         end
