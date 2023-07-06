@@ -50,14 +50,34 @@ if [ $patch -gt 0 ]
 then
 	cp UsbDeviceTop.v UsbDeviceTop.v.gds_orig
 
+	if [ "$ask" = "FS" ]
+	then
+		target__resume="0012a7"
+		target___reset="000947"
+		target_suspend="0002b7"
+	if [ "$ask" = "LS" ]
+	then
+		target__resume="00953f"
+		target___reset="004a3f"
+		target_suspend="0015bf"
+	else	# PRODUCTION
+		target__resume="0e933f"
+		target___reset="07403f"
+		target_suspend="021fbf"
+	fi
+
 	# FS
-	sed -e "s#rx_timerLong_counter == 23'h0012a7#rx_timerLong_counter == 23'h0e933f#" -i UsbDeviceTop.v
-	sed -e "s#rx_timerLong_counter == 23'h000947#rx_timerLong_counter == 23'h07403f#" -i UsbDeviceTop.v
-	sed -e "s#rx_timerLong_counter == 23'h0002b7#rx_timerLong_counter == 23'h021fbf#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == 23'h0012a7#rx_timerLong_counter == 23'h${target__resume}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == 23'h000947#rx_timerLong_counter == 23'h${target___reset}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == 23'h0002b7#rx_timerLong_counter == 23'h${target_suspend}#" -i UsbDeviceTop.v
 	# LS
-	sed -e "s#rx_timerLong_counter == 23'h00953f#rx_timerLong_counter == 23'h0e933f#" -i UsbDeviceTop.v
-	sed -e "s#rx_timerLong_counter == 23'h004a3f#rx_timerLong_counter == 23'h07403f#" -i UsbDeviceTop.v
-	sed -e "s#rx_timerLong_counter == 23'h0015bf#rx_timerLong_counter == 23'h021fbf#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == 23'h00953f#rx_timerLong_counter == 23'h${target__resume}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == 23'h004a3f#rx_timerLong_counter == 23'h${target___reset}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == 23'h0015bf#rx_timerLong_counter == 23'h${target_suspend}#" -i UsbDeviceTop.v
+	# PRODUCTION 48MHz
+	sed -e "s#rx_timerLong_counter == 23'h0e933f#rx_timerLong_counter == 23'h${target__resume}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == 23'h07403f#rx_timerLong_counter == 23'h${target___reset}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == 23'h021fbf#rx_timerLong_counter == 23'h${target_suspend}#" -i UsbDeviceTop.v
 
 	diff -u UsbDeviceTop.v.gds_orig UsbDeviceTop.v || true
 fi
