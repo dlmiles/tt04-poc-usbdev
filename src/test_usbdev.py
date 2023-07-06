@@ -682,14 +682,14 @@ async def test_usbdev(dut):
     await usb.send_sync()    # SYNC 8'b00000001 0x80 KJKJKJKK
 
     # DATA0 PID=8'b1100_0011 0xc3
-    await usb.send_data(0xc3, 8)
+    await usb.send_pid(pid=0xc3)
 
     setup = (0x04030201, 0x08070605, 0x304f)
     #setup = (0x00000000, 0x00000000, 0xf4bf)
     #setup = (0xffffffff, 0xffffffff, 0x70fe)
     await usb.send_data(setup[0], 32)	# DATA[0..3]
     await usb.send_data(setup[1])	# DATA[4..7]
-    await usb.send_data(setup[-1], 16)	# CRC16
+    await usb.send_data(setup[-1], 16, "CRC16")	# CRC16
 
     await usb.send_eop()	# EOP - SE0 SE0 J
 

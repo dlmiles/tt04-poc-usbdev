@@ -266,6 +266,30 @@ class UsbBitbang():
         self.validate_endp(endp)
         return endp
 
+    def token_to_string(self, token_or_pid: int) -> str:
+        value = token_or_pid & 0xf
+        if value == self.OUT:
+            desc = "OUT"
+        elif value == self.ACK:
+            desc = "ACK"
+        elif value == self.DATA0:
+            desc = "DATA0"
+        elif value == self.SOF:
+            desc = "SOF"
+        elif value == self.IN:
+            desc = "IN"
+        elif value == self.NACK:
+            desc = "NACK"
+        elif value == self.DATA1:
+            desc = "DATA1"
+        elif value == self.SETUP:
+            desc = "SETUP"
+        elif value == self.STALL:
+            desc = "STALL"
+        else:
+            desc = ""
+        return "{}[0x{:02x}]".format(desc, value)
+
     async def send_pid(self, pid: int = None, token: int = None) -> None:
         if pid is None:
             self.validate_token(token)
@@ -273,7 +297,7 @@ class UsbBitbang():
             #print("send_pid(token=0x{:x}) computed PID = 0x{:02x} d{} from token".format(token, pid, pid))
 
         self.validate_pid(pid)
-        await self.send_data(pid, 8, "PID=0x{:02x} 0x{:x} d{}".format(token, pid, pid))
+        await self.send_data(pid, 8, "PID={} 0x{:x} d{}".format(self.token_to_string(pid), pid, pid))
 
         # Should be equivalent to
         #await self.send_data(token, 4)
