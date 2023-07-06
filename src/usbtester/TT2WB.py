@@ -333,7 +333,7 @@ class TT2WB():
         await self.send(CMD_EXEC, EXE_WRITE)
         self.dut._log.debug("WB_WRITE {}".format(self.addr_desc(addr)))
 
-        ack = await self.wb_ACK_wait()
+        ack = await self.wb_ACK_wait() # will raise exception
 
         ackstr = '' if(ack is True) else 'NO-WB-ACK'
         fmtstr = format(data, addr) if(format) else ''

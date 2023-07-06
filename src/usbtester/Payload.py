@@ -39,7 +39,29 @@ class Payload():
     def __iter__(self):
         #print("Payload.iter() = {}".format(len(self.data)))
         return Payload.iterator(self.data)
-    
+
+    def __getitem__(self, index: int) -> int:
+        if isinstance(index, int):
+            assert index >= 0, f"Payload.getitem32(index): index {index} out of range"
+            if index > len(self.data):
+                raise IndexError(f"Payload.__getitem__(index): index {index} out of range, len={len(self.data)}")
+            else:
+                return self.data[index]
+        raise TypeError(f"Invalid Argument Type: {type(index)} try {type(int)}")
+
+    def getitem32(self, index: int) -> int:
+        if isinstance(index, int):
+            assert index >= 0, f"Payload.getitem32(index): index {index} out of range"
+            byteindex = index * 4
+            if byteindex+4 > len(self.data):
+                raise IndexError(f"Payload.getitem32(index): index {index} out of range, bytelen={len(self.data)}")
+            else:
+                val = self.data[byteindex]
+                val |= self.data[byteindex+1] << 8
+                val |= self.data[byteindex+2] << 16
+                val |= self.data[byteindex+3] << 24
+                return val
+        raise TypeError(f"Invalid Argument Type: {type(index)} try {type(int)}")
 
     def append(self, other: 'Payload') -> int:
         assert type(other) is Payload, f"type(other) is {type(other)} and not {type(Payload)}"

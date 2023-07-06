@@ -39,14 +39,31 @@ REG_SETUP1 = 0x0014
 
 BUF_START = 0x0020
 
-BUF_DESC0 = 0x0020
-BUF_DESC1 = 0x0024
-BUF_DESC2 = 0x0028
+BUF_DESC0_20 = 0x0020
+BUF_DESC1_20 = 0x0024
+BUF_DESC2_20 = 0x0028
 
-BUF_DATA0 = 0x002c
-BUF_DATA1 = 0x0030
-BUF_DATA2 = 0x0034
-BUF_DATA3 = 0x0038
+# FIXME: remove/refactor original aliases
+BUF_DESC0 = BUF_DESC0_20
+BUF_DESC1 = BUF_DESC1_20
+BUF_DESC2 = BUF_DESC2_20
+
+BUF_DESC0_40 = 0x0040
+BUF_DESC1_40 = 0x0044
+BUF_DESC2_40 = 0x0048
+
+BUF_DATA0_20 = 0x002c
+BUF_DATA1_20 = 0x0030
+BUF_DATA2_20 = 0x0034
+BUF_DATA3_20 = 0x0038
+
+BUF_DATA0 = BUF_DATA0_20
+BUF_DATA1 = BUF_DATA1_20
+BUF_DATA2 = BUF_DATA2_20
+BUF_DATA3 = BUF_DATA3_20
+
+BUF_DATA0_40 = 0x004c
+BUF_DATA1_40 = 0x0050
 
 # FIXME find a way to auto-configure this
 BUF_END = 0x0054
@@ -93,8 +110,8 @@ class Reg(IntEnum):
 
     def has(self, *values: int):
         for v in values:
-            assert v is not Reg.NONE
-            if v == self.value:
+            assert v is not Reg.NONE # only allowed on LHS
+            if v == self.value or v is Reg.ALL:
                 return True
         # All always matches
         return self is Reg.ALL
@@ -152,7 +169,7 @@ def reg_halt_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
         l.append("endp={}".format(value & 0xf))
     if mode.has(Reg.WRITE) and value & 1 << 4:
         l.append("enable-halt")
-    if mode.has(Reg.READ) and value & 1 << 5:
+    if mode.has(Reg.READ, Reg.DEFAULT) and value & 1 << 5:
         l.append("effective_enable-halt")
     if mode.has(Reg.WRITE):
         if value & 1 << 4:
@@ -276,7 +293,7 @@ def addr_to_regname(addr: int) -> str:
     return None
 
 
-def addr_to_regdesc(addr: int, value: int, mode: Reg = Reg.ALL) -> str:
+def addr_to_regdesc(addr: int, value: int, mode: Reg = Reg.DEFAULT) -> str:
     if addr == REG_FRAME:
         return reg_frame_desc(value, mode)
     if addr == REG_ADDRESS:
@@ -301,7 +318,7 @@ def addr_to_regdesc(addr: int, value: int, mode: Reg = Reg.ALL) -> str:
 #  was through this would allow operation specific value formatter or a general
 #  purpose automatic lookup formatter to work by expecting the main argument
 #  'value' 1st
-def regdesc(value: int, addr: int, mode: Reg = Reg.ALL) -> str:
+def regdesc(value: int, addr: int, mode: Reg = Reg.DEFAULT) -> str:
     return addr_to_regdesc(addr, value, mode)
 
 def regwr(value: int, addr: int) -> str:
@@ -487,8 +504,11 @@ def format_reg_interrupt(value: int, addr: int = None) -> str:
 # addr argument ignored
 def format_reg_halt(value: int, addr: int = None) -> str:
     s = ''
-    s += "{:1x}".format(value & 0xf)		# WO write-only no readback
-    s += 'e' if value & 1 << 4 else '_'	# WO write-only no readback
+    if(value & 1 << 4):
+        s += "{:1x}".format(value & 0xf)	# WO write-only no readback
+        s += 'e' if value & 1 << 4 else '_'	# WO write-only no readback
+    else:
+        s += '__'
     s += 'E' if value & 1 << 5 else '_'
     return s
 
@@ -525,10 +545,22 @@ __all__ = [
     'BUF_DESC1',
     'BUF_DESC2',
 
+    'BUF_DESC0_20',
+    'BUF_DESC1_20',
+    'BUF_DESC2_20',
+    'BUF_DESC0_40',
+    'BUF_DESC1_40',
+    'BUF_DESC2_40',
+
     'BUF_DATA0',
     'BUF_DATA1',
     'BUF_DATA2',
     'BUF_DATA3',
+
+    'BUF_DATA0_20',
+    'BUF_DATA1_20',
+    'BUF_DATA0_40',
+    'BUF_DATA1_40',
 
     'BUF_END',
 
