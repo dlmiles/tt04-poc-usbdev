@@ -14,12 +14,6 @@ module tt_um_dlmiles_tt04_poc_usbdev (
     output		[7:0]	uio_out,
     input		[7:0]	uio_in,
     output		[7:0]	uio_oe
-
-`ifdef COCOTB_SIM
-`ifndef GL_TEST
-    , input			sim_reset
-`endif
-`endif
 );
 
     localparam UIO_OE_INPUT = `UIO_OE_INPUT;
@@ -72,7 +66,7 @@ module tt_um_dlmiles_tt04_poc_usbdev (
 
     wire interrupts;
     assign uio_out[2] = interrupts;
-    assign uio_oe[2] = UIO_OE_OUTPUT;		// UIO 2: output: interrupts (disabled)
+    assign uio_oe[2] = UIO_OE_OUTPUT;		// UIO 2: output: interrupts
 
     wire power;
     assign power = uio_in[3];

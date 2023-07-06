@@ -12,12 +12,6 @@ module tb_usbdev (
     output		[7:0]	uio_out,
     input		[7:0]	uio_in,
     output		[7:0]	uio_oe
-
-`ifdef COCOTB_SIM
-`ifndef GL_TEST
-    , input			sim_reset
-`endif
-`endif
 );
 `ifndef SYNTHESIS
     reg [(8*32)-1:0] DEBUG;
@@ -48,11 +42,6 @@ module tb_usbdev (
         .uio_out  (uio_out),
         .uio_in   (uio_in),
         .uio_oe   (uio_oe)
-`ifdef COCOTB_SIM
-`ifndef GL_TEST
-     , .sim_reset (sim_reset)
-`endif
-`endif
     );
 
 endmodule
