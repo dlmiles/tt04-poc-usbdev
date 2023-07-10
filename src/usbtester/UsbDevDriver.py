@@ -63,9 +63,9 @@ class UsbDevDriver():
 
     async def do_endp_shutdown_all(self) -> None:
         for endp in range(0, EP_COUNT):
-            self.halt(endp=endp)
+            await self.halt(endp=endp)
             await self.bus.wb_write(REG_EP(endp), reg_endp(enable=False), regwr)	# disable
-            self.unhalt(endp=endp)
+            await self.unhalt(endp=endp)
 
 
     async def do_config_global_enable(self, value: bool) -> None:
