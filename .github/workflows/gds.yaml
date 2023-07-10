@@ -89,6 +89,13 @@ jobs:
         pwd
         find .
 
+    # for debugging, show all the files
+    - name: show files
+      run: |
+        pwd
+        find / -type f -name sky130_fd_sc_hd 2>/dev/null || true
+        find /home/runner || true
+
     # install oss fpga tools for iVerilog
     - name: install oss-cad-suite
       uses: YosysHQ/setup-oss-cad-suite@v2
