@@ -41,3 +41,127 @@ jobs:
       id-token: write   # to verify the deployment originates from an appropriate source
     steps:
       - uses: TinyTapeout/tt-gds-action/viewer@tt04
+
+##############################################################
+# GateLevel sim
+  gatelevel:
+    needs: gds
+    env:
+        OPENLANE_TAG:		2023.02.14
+        OPENLANE_IMAGE_NAME:	efabless/openlane:4cd0986b3ae550cdf7a6d0fba4e0657012f635d8-amd64
+        OPENLANE_ROOT:		/home/runner/openlane
+        PDK_ROOT:		/home/runner/pdk
+        PDK:			sky130A
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+
+    #- name: restore runs cache
+    #  uses: actions/cache@v3
+    #  with:
+    #    path: runs
+    #    key: ${{ runner.os }}-runs-${{ github.run_id }}
+
+    #- name: restore pdk cache for the primitives needed for GL verification
+    #  uses: actions/cache@v3
+    #  with:
+    #    path: ${{ env.PDK_ROOT }}
+    #    key: ${{ runner.os }}-pdk-${{ github.run_id }}
+
+    # for debugging, show all the files
+    - name: show files
+      run: |
+        pwd
+        find .
+
+    - name: download artifact: GDS_logs
+      uses: actions/download-artifact@v3
+      with:
+        name: GDS_logs
+        path: '.'
+
+    # for debugging, show all the files
+    - name: show files
+      run: |
+        pwd
+        find .
+
+    # install oss fpga tools for iVerilog
+    - name: install oss-cad-suite
+      uses: YosysHQ/setup-oss-cad-suite@v2
+      with:
+          python-override: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+    - run: |
+        yosys --version
+        iverilog -V
+        cocotb-config --libpython
+        cocotb-config --python-bin
+
+    - name: patch
+      run: |
+        cd src
+
+        if ! ./check_verilog_timerconsts.sh
+        then
+          echo "### Temporary patch remove before production and signoff"
+          echo "### For local simulation these timers values are 1/200th or 1/25th of the normal wall-clock time"
+          echo "### This patch restores the production values to meet USB specification with a 48MHz PHY clock source"
+
+          ./check_verilog_timerconsts.sh patch quiet
+        fi
+
+        echo ""
+        echo "### This now validates the values inside verilog are production system values or halts the CI"
+
+        ./check_verilog_timerconsts.sh
+        ### NOTE: For the purpose of gatelevel testing this file is not used, this is run for the positive confirmation
+
+    - name: test FULL_SPEED
+      run: |
+        pwd
+        rm runs/wokwi/results/final/verilog/gl/*.nl.v
+        cp runs/wokwi/results/final/verilog/gl/*.v src/gate_level_netlist.v
+        cd src
+
+        export DEBUG=true
+        unset LOW_SPEED
+        make clean
+        GATES=yes make
+
+        mv results.xml results_fs.xml
+        mv tb.vcd tb_fs.vcd
+
+        # make will return success even if the test fails, so check for failure in the results.xml
+        ! grep failure results_fs.xml
+
+    - name: test LOW_SPEED
+      run: |
+        pwd
+        rm runs/wokwi/results/final/verilog/gl/*.nl.v
+        cp runs/wokwi/results/final/verilog/gl/*.v src/gate_level_netlist.v
+        cd src
+
+        export DEBUG=true
+        export LOW_SPEED=true
+        make clean
+        GATES=yes make
+
+        mv results.xml results_ls.xml
+        mv tb.vcd tb_ls.vcd
+
+        # make will return success even if the test fails, so check for failure in the results.xml
+        ! grep failure results_ls.xml
+
+    - name: upload vcd
+      if: success() || failure()
+      uses: actions/upload-artifact@v3
+      with:
+          name: gatelevel-test-vcd
+          path: |
+            src/*.vcd
+            src/*.fst
+
