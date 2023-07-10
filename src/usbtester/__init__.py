@@ -211,6 +211,21 @@ def reg_config_desc(value: int, mode: Reg = Reg.DEFAULT) -> str:
             l.append("interrupt_enable_set")
         if value & 1 << 3:
             l.append("interrupt_enable_clear")
+
+        if value & 1 << 4:
+            l.append("resumeit_enable_set")
+        if value & 1 << 5:
+            l.append("resumeit_enable_clear")
+
+        if value & 1 << 6:
+            l.append("lowspeed_enable_set")
+        if value & 1 << 7:
+            l.append("lowspeed_enable_clear")
+
+        if value & 1 << 30:
+            l.append("global_enable_set")
+        if value & 1 << 31:
+            l.append("global_enable_clear")
         return ', '.join(l)
     return None
 

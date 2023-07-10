@@ -1,6 +1,16 @@
 #!/usr/bin/python3
 #
 #
+#  Interesting environment settings:
+#
+#	CI=true		(validates expected production timer settings, implies ALL=true)
+#	ALL=true	Run all tests (not the default profile to help speed up development)
+#	DEBUG=true	Enable cocotb debug logging level
+#	LOW_SPEED=true	Test hardware in USB LOW_SPEED mode (1.5 Mbps), FULL_SPEED mode is the default
+#			Tests take longer to run as wall-clock time is longer due to slower speed of USB
+#
+#
+#
 import os
 import sys
 import re
@@ -20,7 +30,7 @@ from usbtester.UsbDevDriver import *
 from usbtester.UsbBitbang import *
 from usbtester.Payload import *
 #from usbtester.FSM import *
-#from usbtester.SignalOutput import *
+from usbtester.SignalOutput import *
 
 
 from test_tt2wb import test_tt2wb_raw, test_tt2wb_cooked
@@ -432,6 +442,18 @@ async def test_usbdev(dut):
     await cocotb.start(monitor(dut, 'dut.usbdev.interrupts',                               'interrupts'))
     await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.main_stateReg_string',     'main'))
 
+    # This is a custom capture mechanism of the output encoding
+    # Goals:
+    #         dumping to a text file and making a comparison with expected output
+    #         confirming period where no output occured
+    #         confirm / measure output duration of special conditions
+    #
+    SO = SignalOutput(dut)
+    await cocotb.start(SO.register('so', 'dut.usb_dp_write', 'dut.usb_dm_write'))
+    # At startup in sumlation we see writeEnable asserted and so output
+    SO.assert_resolvable_mode(True)
+    SO.assert_encoded_mode(SO.SE0)
+
     debug(dut, '003_WISHBONE')
 
     ttwb = TT2WB(dut)
@@ -522,7 +544,19 @@ async def test_usbdev(dut):
 
     driver = UsbDevDriver(dut, ttwb)
 
+    await driver.poweron()
+    await driver.do_config_global_enable(True)
     await driver.setup()
+    await driver.do_config_interrupt_enable(True)
+
+    ## FIXME need to understand/define power on expectations
+    SO.assert_resolvable_mode()		# disable checking
+    SO.assert_encoded_mode()		# disable checking
+
+    await driver.do_config_pullup(True)
+
+    SO.assert_resolvable_mode(False)	# x state outputs
+    SO.assert_encoded_mode(SO.X)	# x state outputs
 
     await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
     await ttwb.wb_dump(REG_FRAME, 4)
@@ -555,6 +589,7 @@ async def test_usbdev(dut):
 
     if LOW_SPEED:
         await ttwb.wb_write(REG_CONFIG, 0x00000040)	# bit6 LOW_SPEED
+        # FIXME consider separate control bit for TIP inversion (D+/D-) at this time that is linked
 
     ## Check FSM(main) state currently is ATTACHED
     assert fsm_state_expected(dut, 'main', 'ATTACHED')
@@ -569,7 +604,7 @@ async def test_usbdev(dut):
 
     await ClockCycles(dut.clk, 128)
 
-    usb = UsbBitbang(dut, TICKS_PER_BIT = TICKS_PER_BIT, LOW_SPEED=LOW_SPEED)
+    usb = UsbBitbang(dut, TICKS_PER_BIT = TICKS_PER_BIT, LOW_SPEED = LOW_SPEED)
 
     debug(dut, '010_RESET')
 
@@ -581,7 +616,7 @@ async def test_usbdev(dut):
     # So this section detects and confirms how it was built and prevents the wrong values
     #  making it to production.
     #
-    await usb.send_SE0()	# !D+ bit0 !D- bit1 = SE0 RESET
+    await usb.send_SE0()		# !D+ bit0 !D- bit1 = SE0 RESET
 
     elapsed_start = get_sim_time(units='us')
 
@@ -589,7 +624,7 @@ async def test_usbdev(dut):
 
     # It doesn't matter which timerLong is setup in ther verilog,
     # It only matters we can detected which and know sim_timerLong_factor
-    # Then apply FS or LS requirements
+    # Then apply FS or LS testing requirements
 
     ## auto-detect and also
     (tolmin, tolmax) = usb_spec_wall_clock_tolerance(10000, LOW_SPEED)	# USB host-to-device reset is 10ms
@@ -685,115 +720,163 @@ async def test_usbdev(dut):
     
     ##############################################################################################
 
-    debug(dut, '020_SETUP_BITBANG')
+    if run_this_test(True):
+        debug(dut, '020_SETUP_BITBANG')
 
-    await usb.send_idle()
+        await usb.send_idle()
 
-    ## Check FSM(main) state goes to ACTIVE
-    assert fsm_state_expected(dut, 'main', 'ACTIVE')
+        ## Check FSM(main) state goes to ACTIVE
+        assert fsm_state_expected(dut, 'main', 'ACTIVE')
 
-    # SYNC sequence 8'b00000001  KJKJKJKK
-    # FIXME check we can hold a random number of J-IDLE states here
-    await usb.send_0()	# LSB0
-    await usb.send_0()
-    await usb.send_0()
-    await usb.send_0()
-    await usb.send_0()
-    await usb.send_0()
-    await usb.send_0()
-    await usb.send_1()	# MSB7
+        # SYNC sequence 8'b00000001  KJKJKJKK
+        # FIXME check we can hold a random number of J-IDLE states here
+        await usb.send_0()	# LSB0
+        await usb.send_0()
+        await usb.send_0()
+        await usb.send_0()
+        await usb.send_0()
+        await usb.send_0()
+        await usb.send_0()
+        await usb.send_1()	# MSB7
 
-    # TOKEN=SETUP  PID=0010b 1101b
-    await usb.send_1()  # LSB0
-    await usb.send_0()
-    await usb.send_1()
-    await usb.send_1()
-    await usb.send_0()
-    await usb.send_1()
-    await usb.send_0()
-    await usb.send_0()  # MSB7
+        # TOKEN=SETUP  PID=0010b 1101b
+        await usb.send_1()  # LSB0
+        await usb.send_0()
+        await usb.send_1()
+        await usb.send_1()
+        await usb.send_0()
+        await usb.send_1()
+        await usb.send_0()
+        await usb.send_0()  # MSB7
 
-    # Sending ADDR=0000001b is ignored after RESET, maybe can setup REG_ADDRESS(addr=1,enable=true)
-    # ADDR=0000000b
-    await usb.send_0()  # LSB0
-    await usb.send_0()
-    await usb.send_0()
-    await usb.send_0()
-    await usb.send_0()
-    await usb.send_0()
-    await usb.send_0()  # MSB6
+        # Sending ADDR=0000001b is ignored after RESET, maybe can setup REG_ADDRESS(addr=1,enable=true)
+        # ADDR=0000000b
+        await usb.send_0()  # LSB0
+        await usb.send_0()
+        await usb.send_0()
+        await usb.send_0()
+        await usb.send_0()
+        await usb.send_0()
+        await usb.send_0()  # MSB6
 
-    # ENDP=0000b
-    await usb.send_0()  # LSB0
-    await usb.send_0()
-    await usb.send_0()
-    await usb.send_0()  # MSB3
+        # ENDP=0000b
+        await usb.send_0()  # LSB0
+        await usb.send_0()
+        await usb.send_0()
+        await usb.send_0()  # MSB3
 
-    # CRC5=11101b 0x1d (a=0x01, e=0x0)
-    # CRC5=00010b 0x02 (a=0x00, e=0x0)
-    await usb.send_0()  # LSB0
-    await usb.send_1()
-    await usb.send_0()
-    await usb.send_0()
-    await usb.send_0()  # MSB4
+        # CRC5=11101b 0x1d (a=0x01, e=0x0)
+        # CRC5=00010b 0x02 (a=0x00, e=0x0)
+        await usb.send_0()  # LSB0
+        await usb.send_1()
+        await usb.send_0()
+        await usb.send_0()
+        await usb.send_0()  # MSB4
 
-    await usb.send_eop()	# EOP - SE0 SE0 J
+        await usb.send_eop()	# EOP - SE0 SE0 J
 
-    # When the hardware does this we insert 2 bit times here (if we should be sending now)
-    # But accept a tolerance of upto 24 bit times for the rx to become active
-    # The 15 interations appear to be the limit before we start failing, the timing maybe
-    #  between the end of the SE0 condition (from EOP), until the rx decode a character, so
-    #  iterations are lost to allow for decode of the SYNC.
-    gap_limit = 15 if(LOW_SPEED) else 14
-    for i in range(0, gap_limit):	# LOW_SPEED=15 FULL_SPEED=14
-        await usb.send_idle()		# This demonstrates maximum tolerance at for TOKEN<>DATA gap
-
-
-    await usb.send_sync()    # SYNC 8'b00000001 0x80 KJKJKJKK
-
-    # DATA0 PID=8'b1100_0011 0xc3
-    await usb.send_pid(pid=0xc3)
-
-    setup = (0x04030201, 0x08070605, 0x304f)
-    #setup = (0x00000000, 0x00000000, 0xf4bf)
-    #setup = (0xffffffff, 0xffffffff, 0x70fe)
-    await usb.send_data(setup[0], 32)	# DATA[0..3]
-    await usb.send_data(setup[1])	# DATA[4..7]
-    await usb.send_data(setup[-1], 16, "CRC16")	# CRC16
-
-    await usb.send_eop()	# EOP - SE0 SE0 J
-
-    await usb.set_idle()
-
-    ## Manage interrupt and reset
-    assert await wait_for_signal_interrupts(dut, int(TICKS_PER_BIT/2)) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
-    data = await ttwb.wb_read(REG_INTERRUPT)
-    assert data & INTR_EP0SETUP != 0, f"REG_INTERRUPT expected to see: EP0SETUP bit set"
-    await ttwb.wb_write(REG_INTERRUPT, INTR_EP0SETUP)	# UVM=W1C
-    data = await ttwb.wb_read(REG_INTERRUPT)
-    assert data & INTR_EP0SETUP == 0, f"REG_INTERRUPT expected to see: EP0SETUP bit clear"
-    assert data == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{data:08x}"
-
-    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
-
-    # Validate 8 bytes of SETUP made it into the buffer location
-    data = await ttwb.wb_read(REG_SETUP0)
-    assert data == setup[0], f"SETUP0 expected to see: SETUP payload+0 0x{setup[0]:08x} is 0x{data:08x}"
-    data = await ttwb.wb_read(REG_SETUP1)
-    assert data == setup[1], f"SETUP1 expected to see: SETUP payload+4 0x{setup[1]:08x} is 0x{data:08x}"
+        # When the hardware does this we insert 2 bit times here (if we should be sending now)
+        # But accept a tolerance of upto 24 bit times for the rx to become active
+        # The 15 interations appear to be the limit before we start failing, the timing maybe
+        #  between the end of the SE0 condition (from EOP), until the rx decode a character, so
+        #  iterations are lost to allow for decode of the SYNC.
+        gap_limit = 15 if(LOW_SPEED) else 14
+        for i in range(0, gap_limit):	# LOW_SPEED=15 FULL_SPEED=14
+            await usb.send_idle()		# This demonstrates maximum tolerance at for TOKEN<>DATA gap
 
 
-    await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
-    await ttwb.wb_dump(REG_FRAME, 4)
-    await ttwb.wb_dump(REG_ADDRESS, 4)
-    await ttwb.wb_dump(REG_INTERRUPT, 4)
-    await ttwb.wb_dump(REG_HALT, 4)
-    await ttwb.wb_dump(REG_CONFIG, 4)
-    await ttwb.wb_dump(REG_INFO, 4)
+        await usb.send_sync()    # SYNC 8'b00000001 0x80 KJKJKJKK
 
-    debug(dut, '020_SETUP_BITBANG_TX_ACK')
+        # DATA0 PID=8'b1100_0011 0xc3
+        await usb.send_pid(pid=0xc3)
 
-    await ClockCycles(dut.clk, TICKS_PER_BIT*19)	# FIXME wait for auto ACK
+        setup = (0x04030201, 0x08070605, 0x304f)
+        #setup = (0x00000000, 0x00000000, 0xf4bf)
+        #setup = (0xffffffff, 0xffffffff, 0x70fe)
+        await usb.send_data(setup[0], 32)	# DATA[0..3]
+        await usb.send_data(setup[1])		# DATA[4..7]
+
+        await usb.send_data(setup[-1], 16, "CRC16")	# CRC16
+
+        await usb.send_eop()	# EOP - SE0 SE0 J
+        await usb.set_idle()
+
+        SO.assert_resolvable_mode()		# disable checking
+        SO.assert_encoded_mode()		# disable checking
+        # FIXME This is how we want this API to work
+        SO.mark_open_at_transition(f"021_SETUP_BITBANG_TX_ACK", -1)
+
+        debug(dut, '021_SETUP_BITBANG_TX_ACK')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*23)	# FIXME wait for auto ACK
+
+        # FIXME This is how we want this API to work
+        SO.mark_close_same_state(TICKS_PER_BIT)
+        SO.assert_resolvable_mode(False)	# x state outputs
+        SO.assert_encoded_mode(SO.X)		# x state outputs
+
+        debug(dut, '022_SETUP_BITBANG_CHECK')
+        ## Manage interrupt and reset
+        assert await wait_for_signal_interrupts(dut, int(TICKS_PER_BIT/2)) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT)
+        assert data & INTR_EP0SETUP != 0, f"REG_INTERRUPT expected to see: EP0SETUP bit set"
+        await ttwb.wb_write(REG_INTERRUPT, INTR_EP0SETUP)	# UVM=W1C
+        data = await ttwb.wb_read(REG_INTERRUPT)
+        assert data & INTR_EP0SETUP == 0, f"REG_INTERRUPT expected to see: EP0SETUP bit clear"
+        assert data == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{data:08x}"
+
+        # FIXME check where this DESC0/EP0 was setup and what do, is it no ZEROed out here ?
+        # FIXME test what the hardware does after power on, reset, with respect to the host trying to communicate
+        # FIXME STALL for SETUP is a special case ?
+        # Validate expected descriptor state
+        data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
+        assert data & 0x0000ffff == 0x00000000,         f"DESC0.offset expected to see: 0 {data:08x}"
+        assert data & 0x000f0000 == 0x000f0000,         f"DESC0.code expected code={data:08x}"
+        assert data & 0xfff00000 == 0x00000000,         f"DESC0.unused expected unused={data:08x}"
+        data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
+        assert data & 0x0000fff0 == 0x00000000,         f"DESC1.next not as expected {data:08x}"
+        assert data & 0xffff0000 == 20 << 16,            f"DESC1.length not as expected {data:08x}"	# FIXME is this correct?
+        assert data & 0x0000000f == 0x00000000,         f"DESC1.unused not as expected {data:08x}"
+        data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
+        assert data & 0x00010000 == 0x00010000,         f"DESC2.direction not as expected {data:08x}"
+        assert data & 0x00020000 == 0x00020000,         f"DESC2.interrupt not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00000000,         f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00080000 == 0x00000000,         f"DESC2.data1_on_completion not as expected {data:08x}"
+        assert data & 0xfff0ffff == 0x00000000,         f"DESC2.unused not as expected {data:08x}"
+
+        # Validate expected endpoint register state
+        data = await ttwb.wb_read(REG_EP0, regrd)
+        assert data & 0x00000001 == 0x00000001,         f"ENDP.enable not as expected {data:08x}"
+        assert data & 0x00000002 == 0x00000000,         f"ENDP.stall not as expected {data:08x}"
+        assert data & 0x00000004 == 0x00000000,         f"ENDP.nak not as expected {data:08x}"
+        assert data & 0x00000008 == 0x00000008,         f"ENDP.data_phase not as expected {data:08x}"
+        assert data & 0x0000fff0 == 0x00000000,         f"ENDP.head not as expected {data:08x}"
+        assert data & 0x00010000 == 0x00000000,         f"ENDP.isochronous not as expected {data:08x}"
+        mpl = MAX_PACKET_LENGTH << 22
+        mpl = 20 << 22	# 5 = 10100	# FIXME where does this 20 come from ?
+        assert data & 0xffc00000 == mpl,                f"ENDP.max_packet_size not as expected {data:08x}"
+        assert data & 0x003e0000 == 0x00000000,         f"ENDP.unused not as expected {data:08x}"
+
+        # Validate 8 bytes of SETUP made it into the buffer location
+        data = await ttwb.wb_read(REG_SETUP0)
+        assert data == setup[0], f"SETUP0 expected to see: SETUP payload+0 0x{setup[0]:08x} is 0x{data:08x}"
+        data = await ttwb.wb_read(REG_SETUP1)
+        assert data == setup[1], f"SETUP1 expected to see: SETUP payload+4 0x{setup[1]:08x} is 0x{data:08x}"
+
+
+        await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
+        await ttwb.wb_dump(REG_FRAME, 4)
+        await ttwb.wb_dump(REG_ADDRESS, 4)
+        await ttwb.wb_dump(REG_INTERRUPT, 4)
+        await ttwb.wb_dump(REG_HALT, 4)
+        await ttwb.wb_dump(REG_CONFIG, 4)
+        await ttwb.wb_dump(REG_INFO, 4)
+
+
+        debug(dut, '020_SETUP_BITBANG_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
+
+
+    SO.unregister()
 
 
     # FIXME check state machine for error (move these tests noise/corruption tests to another suite)
@@ -821,10 +904,6 @@ async def test_usbdev(dut):
     # FIXME this better tests realworld expectations
 
     # FIXME test addr/endp filter rejection (after the addr setup and switch check filter)
-
-    debug(dut, '020_SETUP_BITBANG_END')
-
-    await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
 
     ADDRESS = 0x00
     ADDRESS_ALT = 0x00
@@ -880,6 +959,9 @@ async def test_usbdev(dut):
         assert data == setup[1], f"SETUP1 expected to see: SETUP payload+4 0x{setup[1]:08x} is 0x{data:08x}"
 
         debug(dut, '052_SETUP_ACK')
+
+        SO.assert_resolvable_mode()		# disable checking
+        SO.assert_encoded_mode()		# disable checking
 
         # FIXME check tx_state cycles and emits ACK
         await ClockCycles(dut.clk, TICKS_PER_BIT*24)	# let TX run auto ACK
@@ -1221,7 +1303,7 @@ async def test_usbdev(dut):
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
-        assert data & 0x0000ffff == payload_len,        f"DESC0.offset expected to see: 0"		# varies
+        assert data & 0x0000ffff == payload_len,        f"DESC0.offset expected to see: 0 {data:08x}"	# varies
         assert data & 0x000f0000 == 0x00000000,         f"DESC0.code expected code={data:08x}"
         assert data & 0xfff00000 == 0x00000000,         f"DESC0.unused expected unused={data:08x}"
         data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
@@ -1320,7 +1402,7 @@ async def test_usbdev(dut):
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
-        assert data & 0x0000ffff == payload_len,        f"DESC0.offset expected to see: 0"		# varies
+        assert data & 0x0000ffff == payload_len,        f"DESC0.offset expected to see: 0 {data:08x}"	# varies
         assert data & 0x000f0000 == 0x00000000,         f"DESC0.code expected code={data:08x}"
         assert data & 0xfff00000 == 0x00000000,         f"DESC0.unused expected unused={data:08x}"
         data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
@@ -1403,7 +1485,7 @@ async def test_usbdev(dut):
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
-        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0"	# EMPTY
+        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0 {data:08x}"	# EMPTY
         assert data & 0x000f0000 == 0x00000000,      f"DESC0.code expected code={data:08x}"
         assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
         data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
@@ -1482,7 +1564,7 @@ async def test_usbdev(dut):
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
-        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0"		# EMPTY
+        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0 {data:08x}"	# EMPTY
         assert data & 0x000f0000 == 0x000f0000,      f"DESC0.code expected code={data:08x}"		# TODO indication of NAK?
         assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
         data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
@@ -1561,7 +1643,7 @@ async def test_usbdev(dut):
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
-        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0"		# EMPTY
+        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0 {data:08x}"	# EMPTY
         assert data & 0x000f0000 == 0x000f0000,      f"DESC0.code expected code={data:08x}"		# TODO indication of STALL?
         assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
         data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
@@ -1635,7 +1717,7 @@ async def test_usbdev(dut):
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
-        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0"	# EMPTY
+        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0 {data:08x}"	# EMPTY
         assert data & 0x000f0000 == 0x00000000,      f"DESC0.code expected code={data:08x}"
         assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
         data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
@@ -1709,7 +1791,7 @@ async def test_usbdev(dut):
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
-        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0"	# EMPTY
+        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0 {data:08x}"	# EMPTY
         assert data & 0x000f0000 == 0x00000000,      f"DESC0.code expected code={data:08x}"
         assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
         data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
@@ -1783,7 +1865,7 @@ async def test_usbdev(dut):
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
-        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0"		# EMPTY
+        assert data & 0x0000ffff == 0,               f"DESC0.offset expected to see: 0 {data:08x}"	# EMPTY
         assert data & 0x000f0000 == 0x000f0000,      f"DESC0.code expected code={data:08x}"	# still INPROGRESS # TODO indication of STALL?
         assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
         data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
@@ -1821,19 +1903,31 @@ async def test_usbdev(dut):
         if LOW_SPEED:
             dut._log.warning("LOW_SPEED USB spec does not support isochronous OUT transfer, but we will test them anyway")
 
+        # ISO should accept (receive) any data phase
+        # ISO should send (transmit) only DATA0
+        # So False and False would be well-formed scenario
+
+        # These booleans allow testing with non-compliant scenarios
+        # There are 4 scenarios to test represented by these 2 booleans
+        expect_data_phase = False #True	# True=DATA1
+        host_data_phase = False		# False=DATA0
+
         debug(dut, '700_ISO_OUT')
 
         await driver.halt(endp=ENDPOINT_ALT) # HALT EP=1
         await ttwb.wb_write(BUF_DESC0_40, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_40, desc1(length=8))
         await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_OUT, interrupt=True))
-        await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), isochronous=True, max_packet_size=8))
+        await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), data_phase=expect_data_phase, isochronous=True, max_packet_size=8))
         await ttwb.wb_write(BUF_DATA0_40, 0x00000000)	# not needed by function, only for testing buffer is filled
         await ttwb.wb_write(BUF_DATA1_40, 0x00000000)	# not needed by function, only for testing buffer is filled
         await driver.unhalt(endp=ENDPOINT_ALT)
 
         isopayload = Payload.int32(0x04030201, 0x08070605) # crc16=0x304f
-        await usb.send_out_data0(isopayload, addr=ADDRESS, endp=ENDPOINT_ALT)
+        if host_data_phase:
+            await usb.send_out_data1(isopayload, addr=ADDRESS, endp=ENDPOINT_ALT)
+        else:
+            await usb.send_out_data0(isopayload, addr=ADDRESS, endp=ENDPOINT_ALT)
 
 
         debug(dut, '701_ISO_OUT_NO_TX_ACK')
@@ -1861,7 +1955,7 @@ async def test_usbdev(dut):
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_40, lambda v,a: desc0_format(v))
-        assert data & 0x0000ffff == len(isopayload), f"DESC0.offset expected to see: {len(isopayload)}"
+        assert data & 0x0000ffff == len(isopayload), f"DESC0.offset expected to see: {len(isopayload)} {data:08x}"
         assert data & 0x000f0000 == 0x00000000,      f"DESC0.code expected code={data:08x}"
         assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
         data = await ttwb.wb_read(BUF_DESC1_40, lambda v,a: desc1_format(v))
@@ -1880,7 +1974,9 @@ async def test_usbdev(dut):
         assert data & 0x00000001 == 0x00000001,      f"ENDP.enable not as expected {data:08x}"
         assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
         assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
-        assert data & 0x00000008 == 0x00000008,      f"ENDP.data_phase not as expected {data:08x}"
+        # ISO should not toggle expected next data phase
+        expected = 0x00000008 if(expect_data_phase) else 0x00000000
+        assert data & 0x00000008 == expected,        f"ENDP.data_phase not as expected {data:08x}"
         assert data & 0x0000fff0 == 0x00000000,      f"ENDP.head not as expected {data:08x}"
         assert data & 0x00010000 == 0x00010000,      f"ENDP.isochronous not as expected {data:08x}"
         assert data & 0xffc00000 == 0x02000000,      f"ENDP.max_packet_size not as expected {data:08x}"
@@ -1905,13 +2001,20 @@ async def test_usbdev(dut):
         if LOW_SPEED:
             dut._log.warning("LOW_SPEED USB spec does not support isochronous IN transfer, but we will test them anyway")
 
+        # ISO should accept (receive) any data phase
+        # ISO should send (transmit) only DATA0
+        # So False would be well-formed scenario
+
+        # The boolean allow testing with non-compliant scenario
+        device_data_phase = False	# False=DATA0
+
         debug(dut, '750_ISO_IN')
 
         await driver.halt(endp=ENDPOINT_ALT) # HALT EP=1
         await ttwb.wb_write(BUF_DESC0_40, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_40, desc1(length=8))
         await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_IN, interrupt=True))
-        await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), isochronous=True, max_packet_size=8))
+        await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), data_phase=device_data_phase, isochronous=True, max_packet_size=8))
         isopayload = Payload.int32(0xff0201ff, 0x0055aa00)
         assert isopayload.getitem32(0) == 0xff0201ff
         assert isopayload.getitem32(1) == 0x0055aa00	# confirm API is working
@@ -1951,7 +2054,7 @@ async def test_usbdev(dut):
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_40, lambda v,a: desc0_format(v))
-        assert data & 0x0000ffff == len(isopayload), f"DESC0.offset expected to see: {len(isopayload)}"
+        assert data & 0x0000ffff == len(isopayload), f"DESC0.offset expected to see: {len(isopayload)} {data:08x}"
         assert data & 0x000f0000 == 0x00000000,      f"DESC0.code expected code={data:08x}"
         assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
         data = await ttwb.wb_read(BUF_DESC1_40, lambda v,a: desc1_format(v))
@@ -1970,7 +2073,9 @@ async def test_usbdev(dut):
         assert data & 0x00000001 == 0x00000001,      f"ENDP.enable not as expected {data:08x}"
         assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
         assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
-        assert data & 0x00000008 == 0x00000008,      f"ENDP.data_phase not as expected {data:08x}"
+        # ISO should not toggle expected next data phase
+        expected = 0x00000008 if(device_data_phase) else 0x00000000
+        assert data & 0x00000008 == expected,        f"ENDP.data_phase not as expected {data:08x}"
         assert data & 0x0000fff0 == 0x00000000,      f"ENDP.head not as expected {data:08x}"
         assert data & 0x00010000 == 0x00010000,      f"ENDP.isochronous not as expected {data:08x}"
         assert data & 0xffc00000 == 0x02000000,      f"ENDP.max_packet_size not as expected {data:08x}"
