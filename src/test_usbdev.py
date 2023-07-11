@@ -116,7 +116,20 @@ exclude = [
     r'[\./]VNB',
     r'[\./]VPB',
     r'[\./]VPWR',
-    r'[\./]pwrgood_'
+    r'[\./]pwrgood_',
+    r'[\./]ANTENNA_',
+    r'[\./]clkbuf_leaf_',
+    r'[\./]clknet_leaf_',
+    r'[\./]clkbuf_[\d_]+_clk',
+    r'[\./]clknet_[\d_]+_clk',
+    r'[\./]net\d+[\./]',
+    r'[\./]net\d+$',
+    r'[\./]fanout\d+[\./]',
+    r'[\./]fanout\d+$',
+    r'[\./]input\d+[\./]',
+    r'[\./]input\d+$',
+    r'[\./]hold\d+[\./]',
+    r'[\./]hold\d+$'
 ]
 EXCLUDE_RE = dict(map(lambda k: (k,re.compile(k)), exclude))
 
@@ -126,6 +139,7 @@ def exclude_re_path(path: str, name: str):
             #print("EXCLUDED={}".format(path))
             return False
     return True
+
 
 def resolve_GL_TEST():
     gl_test = False
@@ -449,6 +463,7 @@ async def test_usbdev(dut):
     #         confirm / measure output duration of special conditions
     #
     SO = SignalOutput(dut)
+    # FIXME check this is attached to the PHY_clk
     await cocotb.start(SO.register('so', 'dut.usb_dp_write', 'dut.usb_dm_write'))
     # At startup in sumlation we see writeEnable asserted and so output
     SO.assert_resolvable_mode(True)
@@ -2422,6 +2437,8 @@ async def test_usbdev(dut):
         assert fsm_state_expected(dut, 'main', 'ACTIVE_INIT')
 
         ## FIXME now we've dealt with interrupts check regs
+        ## FIXME on matter is to confirm we are back listening to the default address and the address filter is reset
+        ##       this test assumes we changed address before the reset and tested the address filter
 
         debug(dut, '970_USB_RESET_END')
         await usb.set_idle()

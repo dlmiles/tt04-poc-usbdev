@@ -4,11 +4,17 @@
 #
 #
 #
+import os
+
 import cocotb
-from cocotb.triggers import ClockCycles
 from cocotb.binary import BinaryValue
+from cocotb.handle import NonHierarchyObject, ModifiableObject
+from cocotb.triggers import ClockCycles
 from usbtester.cocotbutil import *
 from usbtester.TT2WB import TT2WB, ADR_MASK, CMD_IDLE, CMD_EXEC, CMD_AD0, CMD_AD1, CMD_DO0, CMD_DO3, CMD_DI0, CMD_DI3, EXE_RESET, EXE_WBSEL, EXE_DISABLE, EXE_ENABLE, EXE_READ, EXE_WRITE, ACK_BITID
+
+
+GL_TEST = 'GL_TEST' in os.environ and os.environ['GL_TEST'] != 'false'
 
 
 def format_value(v) -> str:
@@ -30,8 +36,9 @@ def format_assert(signal, expected) -> str:
 
 
 def DO_ASSERT(signal, expected) -> None:
+    assert isinstance(signal, NonHierarchyObject), f"Unexpected type: {type(signal)}"
     # Ideally we could do with the stacktrace returned being the callers (not here)
-    assert(signal.value, expected), format_assert(signal, expected)
+    assert signal.value == expected, format_assert(signal, expected)
 
 
 async def test_tt2wb_cooked(dut):
@@ -39,13 +46,14 @@ async def test_tt2wb_cooked(dut):
 
     await tt2wb.exe_reset()
 
-    DO_ASSERT(dut.dut.tt2wb.ADR.value, 0)
-    DO_ASSERT(dut.dut.tt2wb.DO.value, 0)
-    DO_ASSERT(dut.dut.tt2wb.DI.value, 0)
-    DO_ASSERT(dut.dut.tt2wb.SEL.value, 0xf)
-    DO_ASSERT(dut.dut.tt2wb.CYC.value, 0)
-    DO_ASSERT(dut.dut.tt2wb.STB.value, 0)
-    DO_ASSERT(dut.dut.tt2wb.WE.value, 0)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.ADR, 0)
+        DO_ASSERT(dut.dut.tt2wb.DO, 0)
+        DO_ASSERT(dut.dut.tt2wb.DI, 0)
+        DO_ASSERT(dut.dut.tt2wb.SEL, 0xf)
+        DO_ASSERT(dut.dut.tt2wb.CYC, 0)
+        DO_ASSERT(dut.dut.tt2wb.STB, 0)
+        DO_ASSERT(dut.dut.tt2wb.WE, 0)
 
     dut.uio_in.value = 0x00
     await ClockCycles(dut.clk, 1)
@@ -54,52 +62,63 @@ async def test_tt2wb_cooked(dut):
 
     await tt2wb.exe_enable()
 
-    DO_ASSERT(dut.dut.tt2wb.CYC.value, 1)
-    DO_ASSERT(dut.dut.tt2wb.wb_CYC.value, 1)
-    DO_ASSERT(dut.dut.tt2wb.wb_STB.value, 0)
+    await ClockCycles(dut.clk, 1)	# clock it one more to see it
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.CYC, 1)
+        DO_ASSERT(dut.dut.tt2wb.wb_CYC, 1)
+        DO_ASSERT(dut.dut.tt2wb.wb_STB, 0)
 
 
     addr = 0xfedc		# (addr is 14bit, addr_to_bus(0xfedc) = 0x3fb7)
     await tt2wb.cmd_addr(addr)
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.ADR.value, addr)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.ADR, addr)
     expected = tt2wb.addr_to_bus(addr)
-    DO_ASSERT(dut.dut.tt2wb.wb_ADR.value, expected)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.wb_ADR, expected)
 
 
     addr = 0xba98		# (addr is 14bit, addr_to_bus(0xba98) = 0x2ea6)
     await tt2wb.cmd_addr(addr)
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.ADR.value, addr)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.ADR, addr)
     expected = tt2wb.addr_to_bus(addr)
-    DO_ASSERT(dut.dut.tt2wb.wb_ADR.value, expected)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.wb_ADR, expected)
 
 
     addr = 0x3210		# (addr is 14bit, addr_to_bus(0x3210) = 0x0c84)
     await tt2wb.cmd_addr(addr)
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.ADR.value, addr)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.ADR, addr)
     expected = tt2wb.addr_to_bus(addr)
-    DO_ASSERT(dut.dut.tt2wb.wb_ADR.value, expected)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.wb_ADR, expected)
 
 
     addr = 0x7654		# (addr is 14bit, addr_to_bus(0x7654) = 0x1d95)
     await tt2wb.cmd_addr(addr)
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.ADR.value, addr)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.ADR, addr)
     expected = tt2wb.addr_to_bus(addr)
-    DO_ASSERT(dut.dut.tt2wb.wb_ADR.value, expected)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.wb_ADR, expected)
 
 
     data = 0xfedcba98
     ack = await tt2wb.exe_write(data)
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.DO.value, addr)
-    DO_ASSERT(dut.dut.tt2wb.wb_DAT_MOSI.value, addr)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.DO, data)
+        DO_ASSERT(dut.dut.tt2wb.wb_DAT_MOSI, data)
 
     assert ack, f"wb_ACK = {ack}"
 
@@ -127,32 +146,44 @@ async def test_tt2wb_cooked(dut):
     await tt2wb.exe_wbsel(0)		# WBSEL
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.SEL, 0)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.SEL, 0)
 
     await tt2wb.exe_wbsel(0x5)		# WBSEL
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.SEL, 0x5)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.SEL, 0x5)
 
-    ack = await tt2wb.exe_write()	# WRITE (with wb_SEL=0x5)
+    # WRITE (with wb_SEL=0x5)
+    ack = await tt2wb.exe_write(None, None, None, wait_ack=False)
+    assert ack is None
 
-    await ClockCycles(dut.clk, 1)
-    DO_ASSERT(dut.dut.tt2wb.wb_SEL, 0x5)
-    DO_ASSERT(dut.dut.tt2wb.wb_WE, 1)
-    DO_ASSERT(dut.dut.tt2wb.wb_STB, 1)
+    # manual wait for ACK to control number of cycles
+    ack = await tt2wb.wb_ACK_wait(cycles=1, can_raise=False)
+    assert ack == False
 
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.wb_SEL, 0x5)
+        DO_ASSERT(dut.dut.tt2wb.wb_WE, 1)
+        DO_ASSERT(dut.dut.tt2wb.wb_STB, 1)
+
+    # as is allowed the device has been issued write and we are waiting multicycles to see ACK
+    ack = await tt2wb.wb_ACK_wait(cycles=None)
     assert ack, f"wb_ACK = {ack}"
 
     # we already clocked it one more to see it (to also see the ACK)
-    DO_ASSERT(dut.dut.tt2wb.wb_SEL, 0x0)
-    DO_ASSERT(dut.dut.tt2wb.wb_WE, 0)
-    DO_ASSERT(dut.dut.tt2wb.wb_STB, 0)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.wb_SEL, 0x0)
+        DO_ASSERT(dut.dut.tt2wb.wb_WE, 0)
+        DO_ASSERT(dut.dut.tt2wb.wb_STB, 0)
 
 
     await tt2wb.exe_reset()		# EXE_RESET (should set 0xf)
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.SEL, 0xf)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.SEL, 0xf)
 
 
     await ClockCycles(dut.clk, 16)
@@ -168,16 +199,15 @@ async def test_tt2wb_raw(dut):
     dut.ui_in.value = EXE_RESET		# EXE_RESET
     await ClockCycles(dut.clk, 1)
 
-    DO_ASSERT(dut.dut.tt2wb.ADR.value, 0)
-    DO_ASSERT(dut.dut.tt2wb.DO.value, 0)
-    DO_ASSERT(dut.dut.tt2wb.DI.value, 0)
-    DO_ASSERT(dut.dut.tt2wb.SEL.value, 0xf)
-    DO_ASSERT(dut.dut.tt2wb.CYC.value, 0)
-    DO_ASSERT(dut.dut.tt2wb.STB.value, 0)
-    DO_ASSERT(dut.dut.tt2wb.WE.value, 0)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.ADR, 0)
+        DO_ASSERT(dut.dut.tt2wb.DO, 0)
+        DO_ASSERT(dut.dut.tt2wb.DI, 0)
+        DO_ASSERT(dut.dut.tt2wb.SEL, 0xf)
+        DO_ASSERT(dut.dut.tt2wb.CYC, 0)
+        DO_ASSERT(dut.dut.tt2wb.STB, 0)
+        DO_ASSERT(dut.dut.tt2wb.WE, 0)
 
-    #while dut.dut.wb_ACK.value == 0:
-    #    await ClockCycles(dut.clk, 1)
     dut.uio_in.value = 0x00
     await ClockCycles(dut.clk, 1)
 
@@ -188,9 +218,11 @@ async def test_tt2wb_raw(dut):
     dut.ui_in.value = EXE_ENABLE	# EXE_ENABLE
     await ClockCycles(dut.clk, 1)
 
-    DO_ASSERT(dut.dut.tt2wb.CYC.value, 1)
-    DO_ASSERT(dut.dut.tt2wb.wb_CYC.value, 1)
-    DO_ASSERT(dut.dut.tt2wb.wb_STB.value, 0)
+    await ClockCycles(dut.clk, 1)	# clock it one more to see it
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.CYC, 1)
+        DO_ASSERT(dut.dut.tt2wb.wb_CYC, 1)
+        DO_ASSERT(dut.dut.tt2wb.wb_STB, 0)
 
 
     addr = 0xfedc		# (addr is 14bit, addr_to_bus(0xfedc) = 0x3fb7)
@@ -202,9 +234,11 @@ async def test_tt2wb_raw(dut):
     await ClockCycles(dut.clk, 1)
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.ADR.value, addr)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.ADR, addr)
     expected = tt2wb.addr_to_bus(addr)
-    DO_ASSERT(dut.dut.tt2wb.wb_ADR.value, expected)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.wb_ADR, expected)
 
 
     addr = 0xba98		# (addr is 14bit, addr_to_bus(0xba98) = 0x2ea6)
@@ -216,9 +250,11 @@ async def test_tt2wb_raw(dut):
     await ClockCycles(dut.clk, 1)
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.ADR.value, addr)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.ADR, addr)
     expected = tt2wb.addr_to_bus(addr)
-    DO_ASSERT(dut.dut.tt2wb.wb_ADR.value, expected)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.wb_ADR, expected)
 
 
     addr = 0x3210		# (addr is 14bit, addr_to_bus(0x3210) = 0x0c84)
@@ -230,9 +266,11 @@ async def test_tt2wb_raw(dut):
     await ClockCycles(dut.clk, 1)
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.ADR.value, addr)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.ADR, addr)
     expected = tt2wb.addr_to_bus(addr)
-    DO_ASSERT(dut.dut.tt2wb.wb_ADR.value, expected)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.wb_ADR, expected)
 
 
     addr = 0x7654		# (addr is 14bit, addr_to_bus(0x7654) = 0x1d95)
@@ -244,9 +282,11 @@ async def test_tt2wb_raw(dut):
     await ClockCycles(dut.clk, 1)
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.ADR.value, addr)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.ADR, addr)
     expected = tt2wb.addr_to_bus(addr)
-    DO_ASSERT(dut.dut.tt2wb.wb_ADR.value, expected)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.wb_ADR, expected)
 
 
     data = 0xfedcba98
@@ -264,8 +304,9 @@ async def test_tt2wb_raw(dut):
     await ClockCycles(dut.clk, 1)
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.DO.value, addr)
-    DO_ASSERT(dut.dut.tt2wb.wb_DAT_MOSI.value, addr)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.DO, data)
+        DO_ASSERT(dut.dut.tt2wb.wb_DAT_MOSI, data)
 
 
     dut.uio_in.value = CMD_EXEC		# EXEC
@@ -316,23 +357,26 @@ async def test_tt2wb_raw(dut):
     await ClockCycles(dut.clk, 1)
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.SEL, 0)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.SEL, 0)
 
     dut.uio_in.value = CMD_EXEC			# EXEC
     dut.ui_in.value = (0x05<<4)|EXE_WBSEL	# EXE_WBSEL
     await ClockCycles(dut.clk, 1)
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.SEL, 0x5)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.SEL, 0x5)
 
     dut.uio_in.value = CMD_EXEC			# EXEC
     dut.ui_in.value = EXE_WRITE			# EXE_WRITE
     await ClockCycles(dut.clk, 1)
 
     await ClockCycles(dut.clk, 1)
-    DO_ASSERT(dut.dut.tt2wb.wb_SEL, 0x5)
-    DO_ASSERT(dut.dut.tt2wb.wb_WE, 1)
-    DO_ASSERT(dut.dut.tt2wb.wb_STB, 1)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.wb_SEL, 0x5)
+        DO_ASSERT(dut.dut.tt2wb.wb_WE, 1)
+        DO_ASSERT(dut.dut.tt2wb.wb_STB, 1)
 
     WAIT_FOR_ACK_MAX_CYCLES = 10000
     for i in range(0, WAIT_FOR_ACK_MAX_CYCLES):
@@ -344,9 +388,10 @@ async def test_tt2wb_raw(dut):
         
 
     # we already clocked it one more to see it (to also see the ACK)
-    DO_ASSERT(dut.dut.tt2wb.wb_SEL, 0x0)
-    DO_ASSERT(dut.dut.tt2wb.wb_WE, 0)
-    DO_ASSERT(dut.dut.tt2wb.wb_STB, 0)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.wb_SEL, 0x0)
+        DO_ASSERT(dut.dut.tt2wb.wb_WE, 0)
+        DO_ASSERT(dut.dut.tt2wb.wb_STB, 0)
 
 
     dut.uio_in.value = CMD_EXEC			# EXEC
@@ -354,7 +399,8 @@ async def test_tt2wb_raw(dut):
     await ClockCycles(dut.clk, 1)
 
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
-    DO_ASSERT(dut.dut.tt2wb.SEL, 0xf)
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.SEL, 0xf)
 
 
     await ClockCycles(dut.clk, 16)

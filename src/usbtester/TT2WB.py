@@ -199,6 +199,9 @@ class TT2WB():
         if cycles is None:
             cycles = self.MAX_CYCLES
 
+        if cycles == 0 and self.is_ack():
+            return True
+
         #print("wb_ACK_wait cycles={}".format(cycles))
         for i in range(0, cycles):
             if self.is_ack():
@@ -317,7 +320,7 @@ class TT2WB():
         return None
 
 
-    async def exe_write(self, data: int = None, addr: int = None, format: Callable[[int,int], str] = None) -> bool:
+    async def exe_write(self, data: int = None, addr: int = None, format: Callable[[int,int], str] = None, wait_ack: bool = True) -> bool:
         self.check_enable()
 
         if addr is not None:
@@ -335,9 +338,13 @@ class TT2WB():
         await self.send(CMD_EXEC, EXE_WRITE)
         self.dut._log.debug("WB_WRITE {}".format(self.addr_desc(addr)))
 
-        ack = await self.wb_ACK_wait() # will raise exception
+        if wait_ack:
+            ack = await self.wb_ACK_wait() 	# will raise exception on timeout
+            ackstr = '' if(ack is True) else 'NO-WB-ACK'
+        else:
+            ack = None
+            ackstr = 'NO-WAIT-ACK'
 
-        ackstr = '' if(ack is True) else 'NO-WB-ACK'
         fmtstr = format(data, addr) if(format) else ''
         fmtstr = '' if(fmtstr is None) else fmtstr
         self.dut._log.info("WB_WRITE @{} = 0x{:08x} {} {}".format(self.addr_desc(addr), data, ackstr, fmtstr))
