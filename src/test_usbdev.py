@@ -938,7 +938,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT) # HALT EP=0
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=8))
-        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True, completionOnFull=True))
         await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=20))
         await driver.unhalt(endp=ENDPOINT)
 
@@ -998,7 +998,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT)
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=8))
-        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True, completionOnFull=True))
         await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
         await ttwb.wb_write(BUF_DATA0_20, 0x14131211)
         await ttwb.wb_write(BUF_DATA1_20, 0x18171615)
@@ -1070,7 +1070,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT)
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=8))
-        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True, completionOnFull=True))
         await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
         #await ttwb.wb_write(BUF_DATA0_20, 0x94939291)
         #await ttwb.wb_write(BUF_DATA1_20, 0x97969594)
@@ -1154,7 +1154,7 @@ async def test_usbdev(dut):
         # FIXME randomize values here, set zero, 0xfffff, random to confirm DESC[012] contents do not matter (run the test 3 times)
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))
-        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=False))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=False, completionOnFull=True))
         # the key things for auto NAK generation are enable=True and head=0 (no descriptor, so no data)
         await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(0), max_packet_size=0))
         await driver.unhalt(endp=ENDPOINT)
@@ -1187,7 +1187,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT) # HALT EP=0
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=4))
-        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True, completionOnFull=True))
         # This time we are enable=True and head!=0 (so the DESC[012] above is important
         await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=4))
         await ttwb.wb_write(BUF_DATA0_20, 0x0b0a0908)
@@ -1276,7 +1276,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT) # HALT EP=0
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=payload_len))
-        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True, completionOnFull=True))
         await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=MAX_PACKET_LENGTH))
         # FIXME pattern fill
         payload = Payload.fill(0xff, payload_len)	# zero filled for now, good for bit-stuffing test
@@ -1328,7 +1328,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00010000,         f"DESC2.direction not as expected {data:08x}"
         assert data & 0x00020000 == 0x00020000,         f"DESC2.interrupt not as expected {data:08x}"
-        assert data & 0x00040000 == 0x00000000,         f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00040000,         f"DESC2.completion_on_full not as expected {data:08x}"
         assert data & 0x00080000 == 0x00000000,         f"DESC2.data1_on_completion not as expected {data:08x}"
         assert data & 0xfff0ffff == 0x00000000,         f"DESC2.unused not as expected {data:08x}"
 
@@ -1376,7 +1376,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT) # HALT EP=0
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=payload_len))
-        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True, completionOnFull=True))
         await ttwb.wb_write(REG_EP0, reg_endp(enable=True, data_phase=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=MAX_PACKET_LENGTH))
         fill_payload = Payload.fill(0x00, payload_len)	# to check buffer is filled
         count = await ttwb.wb_write_payload(BUF_DATA0_20, fill_payload)
@@ -1427,7 +1427,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00000000,         f"DESC2.direction not as expected {data:08x}"
         assert data & 0x00020000 == 0x00020000,         f"DESC2.interrupt not as expected {data:08x}"
-        assert data & 0x00040000 == 0x00000000,         f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00040000,         f"DESC2.completion_on_full not as expected {data:08x}"
         assert data & 0x00080000 == 0x00000000,         f"DESC2.data1_on_completion not as expected {data:08x}"
         assert data & 0xfff0ffff == 0x00000000,         f"DESC2.unused not as expected {data:08x}"
 
@@ -1461,7 +1461,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT) # HALT EP=0
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))	# EMPTY
-        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True, completionOnFull=True))
         await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
         await ttwb.wb_write(BUF_DATA0_20, 0xffffffff)
         await driver.unhalt(endp=ENDPOINT)
@@ -1510,7 +1510,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00010000,      f"DESC2.direction not as expected {data:08x}"
         assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
-        assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00040000,      f"DESC2.completion_on_full not as expected {data:08x}"
         assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
         assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
 
@@ -1540,7 +1540,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT) # HALT EP=0
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))	# EMPTY
-        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True, completionOnFull=True))
         await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
         await ttwb.wb_write(BUF_DATA0_20, 0xffffffff)
         await driver.unhalt(endp=ENDPOINT)
@@ -1589,7 +1589,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00010000,      f"DESC2.direction not as expected {data:08x}"
         assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
-        assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00040000,      f"DESC2.completion_on_full not as expected {data:08x}"
         assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
         assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
 
@@ -1619,7 +1619,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT) # HALT EP=0
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))	# EMPTY
-        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True, completionOnFull=True))
         await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
         await ttwb.wb_write(BUF_DATA0_20, 0xffffffff)
         await driver.unhalt(endp=ENDPOINT)
@@ -1668,7 +1668,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00010000,      f"DESC2.direction not as expected {data:08x}"
         assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
-        assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00040000,      f"DESC2.completion_on_full not as expected {data:08x}"
         assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
         assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
 
@@ -1698,7 +1698,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT) # HALT EP=0
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))	# EMPTY
-        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True, completionOnFull=True))
         await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
         await ttwb.wb_write(BUF_DATA0_20, 0xffffffff)	# not needed by function, only for testing buffer is filled
         await driver.unhalt(endp=ENDPOINT)
@@ -1742,7 +1742,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00000000,      f"DESC2.direction not as expected {data:08x}"	# OUT
         assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
-        assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00040000,      f"DESC2.completion_on_full not as expected {data:08x}"
         assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
         assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
 
@@ -1772,7 +1772,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT) # HALT EP=0
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))	# EMPTY
-        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True, completionOnFull=True))
         await ttwb.wb_write(REG_EP0, reg_endp(enable=True, nak=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8)) # NAK
         await ttwb.wb_write(BUF_DATA0_20, 0xffffffff)	# not needed by function, only for testing buffer is filled
         await driver.unhalt(endp=ENDPOINT)
@@ -1816,7 +1816,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00000000,      f"DESC2.direction not as expected {data:08x}"	# OUT
         assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
-        assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00040000,      f"DESC2.completion_on_full not as expected {data:08x}"
         assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
         assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
 
@@ -1846,7 +1846,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT) # HALT EP=0
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))	# EMPTY
-        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True, completionOnFull=True))
         await ttwb.wb_write(REG_EP0, reg_endp(enable=True, stall=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8)) # STALL
         await ttwb.wb_write(BUF_DATA0_20, 0xffffffff)	# not needed by function, only for testing buffer is filled
         await driver.unhalt(endp=ENDPOINT)
@@ -1890,7 +1890,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00000000,      f"DESC2.direction not as expected {data:08x}"	# OUT
         assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
-        assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00040000,      f"DESC2.completion_on_full not as expected {data:08x}"
         assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
         assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
 
@@ -1932,7 +1932,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT_ALT) # HALT EP=1
         await ttwb.wb_write(BUF_DESC0_40, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_40, desc1(length=8))
-        await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_OUT, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_OUT, interrupt=True, completionOnFull=True))
         await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), data_phase=expect_data_phase, isochronous=True, max_packet_size=8))
         await ttwb.wb_write(BUF_DATA0_40, 0x00000000)	# not needed by function, only for testing buffer is filled
         await ttwb.wb_write(BUF_DATA1_40, 0x00000000)	# not needed by function, only for testing buffer is filled
@@ -1980,7 +1980,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(BUF_DESC2_40, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00000000,      f"DESC2.direction not as expected {data:08x}"
         assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
-        assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00040000,      f"DESC2.completion_on_full not as expected {data:08x}"
         assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
         assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
 
@@ -2028,7 +2028,7 @@ async def test_usbdev(dut):
         await driver.halt(endp=ENDPOINT_ALT) # HALT EP=1
         await ttwb.wb_write(BUF_DESC0_40, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_40, desc1(length=8))
-        await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_IN, interrupt=True))
+        await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_IN, interrupt=True, completionOnFull=True))
         await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), data_phase=device_data_phase, isochronous=True, max_packet_size=8))
         isopayload = Payload.int32(0xff0201ff, 0x0055aa00)
         assert isopayload.getitem32(0) == 0xff0201ff
@@ -2079,7 +2079,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(BUF_DESC2_40, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00010000,      f"DESC2.direction not as expected {data:08x}"
         assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
-        assert data & 0x00040000 == 0x00000000,      f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00040000,      f"DESC2.completion_on_full not as expected {data:08x}"
         assert data & 0x00080000 == 0x00000000,      f"DESC2.data1_on_completion not as expected {data:08x}"
         assert data & 0xfff0ffff == 0x00000000,      f"DESC2.unused not as expected {data:08x}"
 
@@ -2287,7 +2287,7 @@ async def test_usbdev(dut):
             await driver.halt(endp=endp)
             await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
             await ttwb.wb_write(BUF_DESC1_20, desc1(length=0))
-            await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True))
+            await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True, completionOnFull=True))
             # ensure enabled (making it more likely for a bug to show up by hardware emitting a response when it should have ignored)
             await ttwb.wb_write(REG_EP(endp), reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=32))
             await driver.unhalt(endp=endp)
