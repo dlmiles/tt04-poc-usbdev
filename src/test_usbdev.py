@@ -1990,7 +1990,8 @@ async def test_usbdev(dut):
         assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
         assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
         # ISO should not toggle expected next data phase
-        expected = 0x00000008 if(expect_data_phase) else 0x00000000
+        #expected = 0x00000008 if(expect_data_phase) else 0x00000000
+        expected = 0x00000008 if(host_data_phase) else 0x00000000	# Provide visibility on the data phase seen
         assert data & 0x00000008 == expected,        f"ENDP.data_phase not as expected {data:08x}"
         assert data & 0x0000fff0 == 0x00000000,      f"ENDP.head not as expected {data:08x}"
         assert data & 0x00010000 == 0x00010000,      f"ENDP.isochronous not as expected {data:08x}"
@@ -2089,7 +2090,7 @@ async def test_usbdev(dut):
         assert data & 0x00000002 == 0x00000000,      f"ENDP.stall not as expected {data:08x}"
         assert data & 0x00000004 == 0x00000000,      f"ENDP.nak not as expected {data:08x}"
         # ISO should not toggle expected next data phase
-        expected = 0x00000008 if(device_data_phase) else 0x00000000
+        expected = 0x00000008 if(device_data_phase) else 0x00000000	# confirm no toggle
         assert data & 0x00000008 == expected,        f"ENDP.data_phase not as expected {data:08x}"
         assert data & 0x0000fff0 == 0x00000000,      f"ENDP.head not as expected {data:08x}"
         assert data & 0x00010000 == 0x00010000,      f"ENDP.isochronous not as expected {data:08x}"
