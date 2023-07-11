@@ -24,8 +24,10 @@ module tb_usbdev (
         $dumpvars (0, tb_usbdev);
         #1;
         
+`ifndef SYNTHESIS
         DEBUG <= {8'h44, 8'h45, 8'h42, 8'h55, 8'h47, {27{8'h20}}}; // "DEBUG        "
         DEBUG_wire <= 0;
+`endif
     end
 
 
