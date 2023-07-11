@@ -4585,7 +4585,7 @@ module UsbDeviceCtrl (
   assign when_UsbDeviceCtrl_l698 = (rxTimer_timeout || ((! io_phy_rx_active) && io_phy_rx_active_regNext));
   assign when_UsbDeviceCtrl_l704 = (! io_phy_rx_active);
   assign when_UsbDeviceCtrl_l783 = (! token_isSetup);
-  assign when_UsbDeviceCtrl_l797 = ((! active_dataRxOverrun) || (desc_completionOnFull && desc_full));
+  assign when_UsbDeviceCtrl_l797 = ((! byteCounter_full) || (desc_completionOnFull && desc_full));
   assign when_UsbDeviceCtrl_l876 = (token_endpoint == 4'b0000);
   assign when_UsbDeviceCtrl_l881 = (regs_address_trigger && token_isIn);
   assign when_UsbDeviceCtrl_l886 = (! desc_full);
