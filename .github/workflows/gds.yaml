@@ -93,8 +93,8 @@ jobs:
     - name: show files
       run: |
         pwd
-        find / -type f -name sky130_fd_sc_hd 2>/dev/null || true
-        find /home/runner || true
+        find / -name sky130_fd_sc_hd 2>/dev/null || true
+        find /home/runner -iname "*pdk*" || true
 
     # install oss fpga tools for iVerilog
     - name: install oss-cad-suite
