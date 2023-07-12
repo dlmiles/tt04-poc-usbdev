@@ -69,15 +69,16 @@ class UsbBitbang():
             assert self.nrzi_one_count == 0
 
     async def update(self, or_mask: int, ticks: int = None) -> int:
-        v = self.dut.uio_in.value & ~self.MASK | or_mask
-        self.dut.uio_in.value = v
+        v = self.dut.uio_in.value
+        nv = (v & ~self.MASK) | or_mask
+        self.dut.uio_in.value = nv
 
         if ticks is None:
             ticks = self.TICKS_PER_BIT
         if ticks > 0:
             await ClockCycles(self.dut.clk, ticks)
 
-        return v
+        return nv
 
     async def send_SE0(self) -> int:
         return await self.update(self.SE0)
