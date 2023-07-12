@@ -66,6 +66,7 @@ class TT2WB():
     data = None
     need_issue = False
     force_default = False
+    UIO_IN_MASK = 0xe0	# bit7..bit5 are input, bit4 output, bit3..bit0 unused
     ADDR_DESC = {
         # Here you can create a dict name for address location to help diagnostics in logs
         # There is also the 'format' Callable mechanism
@@ -163,7 +164,7 @@ class TT2WB():
         if save_restore:
             self.save()
 
-        self.dut.uio_in.value = uio_in
+        self.dut.uio_in.value = (self.dut.uio_in.value & ~self.UIO_IN_MASK) | uio_in
         self.dut.ui_in.value = ui_in
 
         await ClockCycles(self.dut.clk, 1)
@@ -177,7 +178,7 @@ class TT2WB():
 
     async def recv(self, uio_in: int = None, ui_in: int = None, pipeline: bool = False) -> int:
         if uio_in is not None:
-            self.dut.uio_in.value = uio_in
+            self.dut.uio_in.value = (self.dut.uio_in.value & ~self.UIO_IN_MASK) | uio_in
         if ui_in is not None:
             self.dut.ui_in.value = ui_in
 
