@@ -2212,13 +2212,23 @@ async def test_usbdev(dut):
     #### EOP idle
     ####
 
+    keepalive = 0
+    data = await ttwb.wb_read(REG_FRAME, regrd)
+    assert data & 0x07ff0000 == keepalive << 16, f"EOP: keepalive = 0x{data:04x} is not the expected value 0x{keepalive:04x}"
+
     if run_this_test(True):
         debug(dut, '850_EOP_0000')
+
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        assert data & 0x07ff0000 == keepalive << 16, f"EOP: keepalive = 0x{data:04x} is not the expected value 0x{keepalive:04x}"
 
         await usb.send_eop()
         await usb.set_idle()
 
         debug(dut, '851_EOP_0000_CHECK')
+        keepalive += 1
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        assert data & 0x07ff0000 == keepalive << 16, f"EOP: keepalive = 0x{data:04x} is not the expected value 0x{keepalive:04x}"
         await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
         debug(dut, '852_EOP_0000_END')
@@ -2236,6 +2246,9 @@ async def test_usbdev(dut):
         await usb.set_idle()
 
         debug(dut, '861_EOP_0001_CHECK')
+        keepalive += 1
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        assert data & 0x07ff0000 == keepalive << 16, f"EOP: keepalive = 0x{data:04x} is not the expected value 0x{keepalive:04x}"
         await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
         debug(dut, '862_EOP_0001_END')
@@ -2253,6 +2266,9 @@ async def test_usbdev(dut):
         await usb.set_idle()
 
         debug(dut, '871_EOP_0002_CHECK')
+        keepalive += 1
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        assert data & 0x07ff0000 == keepalive << 16, f"EOP: keepalive = 0x{data:04x} is not the expected value 0x{keepalive:04x}"
         await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
         debug(dut, '872_EOP_0002_END')
@@ -2270,6 +2286,9 @@ async def test_usbdev(dut):
         await usb.set_idle()
 
         debug(dut, '881_EOP_0003_CHECK')
+        keepalive += 1
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        assert data & 0x07ff0000 == keepalive << 16, f"EOP: keepalive = 0x{data:04x} is not the expected value 0x{keepalive:04x}"
         await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
         debug(dut, '882_EOP_0003_END')
