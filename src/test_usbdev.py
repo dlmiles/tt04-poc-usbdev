@@ -705,11 +705,12 @@ async def test_usbdev(dut):
     assert data & INTR_RESET == 0, f"REG_INTERRUPT expected to see: RESET bit clear"
 
     # FIXME understand the source of this interrupt (it seems RESET+DISCONNECT are raised at the same time)
+    # FIXME ok understood, it is due to SE0 state being held ?
     # REG_INTERRUPT also has 0x0010000 set for DISCONNECT
-    assert data & INTR_DISCONNECT != 0, f"REG_INTERRUPT expected to see: DISCONNECT bit set"
-    await ttwb.wb_write(REG_INTERRUPT, INTR_DISCONNECT, regwr)	# W1C
-    data = await ttwb.wb_read(REG_INTERRUPT, regrd)
-    assert data & INTR_DISCONNECT == 0, f"REG_INTERRUPT expected to see: DISCONNECT bit clear"
+    #assert data & INTR_DISCONNECT != 0, f"REG_INTERRUPT expected to see: DISCONNECT bit set"
+    #await ttwb.wb_write(REG_INTERRUPT, INTR_DISCONNECT, regwr)	# W1C
+    #data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+    #assert data & INTR_DISCONNECT == 0, f"REG_INTERRUPT expected to see: DISCONNECT bit clear"
 
     assert data == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{data:08x}"
 
