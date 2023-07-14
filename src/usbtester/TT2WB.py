@@ -272,7 +272,7 @@ class TT2WB():
             await self.send(CMD_EXEC, EXE_ENABLE)
 
         await self.send(CMD_EXEC, EXE_READ)
-        self.dut._log.debug("WB_READ  0x{:04x}".format(addr))
+        self.dut._log.debug("WB_READ  @0x{:04x}".format(addr))
 
         if not await self.wb_ACK_wait():
             # need_issue mechanism takes care with deferring the reset of issue=0

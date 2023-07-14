@@ -15,6 +15,7 @@ import os
 import sys
 import re
 import inspect
+from typing import Any
 
 import cocotb
 from cocotb.clock import Clock
@@ -25,9 +26,11 @@ from cocotb.utils import get_sim_time
 
 from usbtester import *
 from usbtester.cocotbutil import *
+from usbtester.cocotb_proxy_dut import *
 from usbtester.TT2WB import *
 from usbtester.UsbDevDriver import *
 from usbtester.UsbBitbang import *
+from usbtester.SignalAccessor import *
 from usbtester.Payload import *
 #from usbtester.FSM import *
 from usbtester.SignalOutput import *
@@ -36,10 +39,10 @@ from usbtester.SignalOutput import *
 from test_tt2wb import test_tt2wb_raw, test_tt2wb_cooked
 
 
-DATAPLUS_BITID		= 0
-DATAMINUS_BITID		= 1
-INTERRUPTS_BITID	= 2
-POWER_BITID		= 3
+DATAPLUS_BITID		= 0	# bidi: uio_out & uio_in
+DATAMINUS_BITID		= 1	# bidi: uio_out & uio_in
+INTERRUPTS_BITID	= 2	# output: uio_out
+POWER_BITID		= 3	# input: uio_in
 
 
 ###
@@ -238,11 +241,11 @@ def signal_interrupts(dut) -> bool:
 async def wait_for_signal_interrupts(dut, not_after: int = None, not_before: int = None) -> int:
     limit = not_after if(not_after is not None) else sys.maxsize
     count = 0
-    bf = extract_bit(dut.uio_out, INTERRUPTS_BITID)
+    bf = signal_interrupts(dut)
     while not bf and count < limit:
         count += 1
         await ClockCycles(dut.clk, 1)
-        bf = extract_bit(dut.uio_out, INTERRUPTS_BITID)
+        bf = signal_interrupts(dut)
 
     if bf and not_before is not None:
         assert count >= not_before, f"wait_for_signal_interrupts(not_after={not_after}, not_before={not_before}) = NOT_BEFORE failed at count={count} too early"
@@ -253,7 +256,7 @@ async def wait_for_signal_interrupts(dut, not_after: int = None, not_before: int
         while not bf and tmp < limit + 1000:
             tmp += 1
             await ClockCycles(dut.clk, 1)
-            bf = extract_bit(dut.uio_out, INTERRUPTS_BITID)
+            bf = signal_interrupts(dut)
         msg = f"(signal fired at {tmp})" if(bf) else f"(signal did not fire by {tmp})"
         assert count <= not_after, f"wait_for_signal_interrupts(not_after={not_after}, not_before={not_before}) = NOT_AFTER failed at count={count} too late {msg}"
 
@@ -281,14 +284,16 @@ def fsm_signal_path(label: str) -> str:
     raise Exception(f"Unable to find fsm_signal: {label}")
 
 
-def fsm_printable(signal: cocotb.handle.NonHierarchyObject) -> str:
-    assert isinstance(signal, cocotb.handle.NonHierarchyObject)
-    value = signal.value
-    if value.is_resolvable and signal._path.endswith('_string'):
+# signal: NonHierarchyObject|BinaryValue
+def fsm_printable(signal) -> str:
+    if isinstance(signal, cocotb.handle.NonHierarchyObject):
+        value = signal.value
+    assert isinstance(value, BinaryValue)
+    if value.is_resolvable: # and signal._path.endswith('_string'):
         # Convert to string
         return value.buff.decode('ascii').rstrip()
     else:
-        return str(value.value)
+        return str(value)
 
 
 def fsm_state(dut, label: str) -> str:
@@ -310,25 +315,29 @@ def fsm_state_expected(dut, label: str, expected: str) -> bool:
 ## FIXME see if we can register multiple items here (to speed up simulation?) :
 ##   signal, prefix/label, lambda on change, lambda on print
 ##  want to have some state changes lookup another signal to print
+## signal: str|SignalAccessor
 @cocotb.coroutine
-def monitor(dut, path: str, prefix: str = None) -> None:
+def monitor(dut, signal, prefix: str = None) -> None:
     value = None
 
-    signal = design_element(dut, path)
-    if signal is None:
-        raise Exception(f"Unable to find signal path: {path}")
+    if isinstance(signal, str):
+        signal = SignalAccessor(dut, signal)
+    assert isinstance(signal, SignalAccessor)
+    #signal = design_element(dut, path)
+    #if signal is None:
+    #    raise Exception(f"Unable to find signal path: {path}")
         
-    pfx = prefix if(prefix) else path
+    pfx = prefix if(prefix) else signal.path
 
     value = signal.value
-    dut._log.info("monitor({}) = {} [STARTED]".format(pfx, fsm_printable(signal)))
+    dut._log.info("monitor({}) = {} [STARTED]".format(pfx, fsm_printable(signal.raw)))
 
     while True:
         # in generator-based coroutines triggers are yielded
         yield ClockCycles(dut.clk, 1)
         new_value = signal.value
         if new_value != value:
-            s = fsm_printable(signal)
+            s = fsm_printable(signal.raw)
             dut._log.info("monitor({}) = {}".format(pfx, s))
             value = new_value
 
@@ -363,6 +372,9 @@ async def test_usbdev(dut):
     if GL_TEST:
         dut._log.info("GL_TEST={} (detected)".format(GL_TEST))
         #depth = 1
+
+    if GL_TEST:
+        dut = ProxyDut(dut)
 
     report_resolvable(dut, 'initial ', depth=depth, filter=exclude_re_path)
 
@@ -453,8 +465,10 @@ async def test_usbdev(dut):
 
     # Start these now as they will fire during USB interface RESET sequence
     # Defered the other FSM monitors setup due to significant simulation slowdown
-    await cocotb.start(monitor(dut, 'dut.usbdev.interrupts',                               'interrupts'))
-    await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.main_stateReg_string',     'main'))
+    signal_accessor_interrupts = SignalAccessor(dut, 'uio_out', INTERRUPTS_BITID)	# dut.usbdev.interrupts
+    await cocotb.start(monitor(dut, signal_accessor_interrupts, 'interrupts'))
+    if not GL_TEST:
+        await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.main_stateReg_string',      'main'))
 
     # This is a custom capture mechanism of the output encoding
     # Goals:
@@ -464,7 +478,9 @@ async def test_usbdev(dut):
     #
     SO = SignalOutput(dut)
     # FIXME check this is attached to the PHY_clk
-    await cocotb.start(SO.register('so', 'dut.usb_dp_write', 'dut.usb_dm_write'))
+    signal_accessor_usb_dp_write = SignalAccessor(dut, 'uio_out', DATAPLUS_BITID)	# dut.usb_dp_write
+    signal_accessor_usb_dm_write = SignalAccessor(dut, 'uio_out', DATAMINUS_BITID)	# dut.usb_dm_write
+    await cocotb.start(SO.register('so', signal_accessor_usb_dp_write, signal_accessor_usb_dm_write))
     # At startup in sumlation we see writeEnable asserted and so output
     SO.assert_resolvable_mode(True)
     SO.assert_encoded_mode(SO.SE0)
@@ -529,11 +545,17 @@ async def test_usbdev(dut):
         expect = ((i+3) << 24) | ((i+2) << 16) | ((i+1) << 8) | (i)
         d = await ttwb.exe_read_BinaryValue(a)
         if d[0].is_resolvable:
-            assert d[0] == expect, f"read at {a} expected {expect} got {d[0]}"
+            # The probe strategy might see aliasing of memory locations (gatelevel/flattened HDL might see this)
+            if a >= ADDRESS_LENGTH and d[0] != expect:
+                dut._log.warning("MEM-BUF-ALIAS detected ? @0x{:04x} actual={:08x} expected={:08x}".format(a, d[0].integer, expect))
+                if end_of_buffer == -1:
+                    end_of_buffer = a
+            else:
+                assert d[0] == expect, f"read at {a} expected {expect:08x} got {d[0]} {d[0].integer:08x}"
         elif end_of_buffer == -1:
             end_of_buffer = a	# stop at first non resolvable
     dut._log.info("END_OF_BUFFER = 0x{:04x} {}d".format(end_of_buffer, end_of_buffer))
-    assert ADDRESS_LENGTH == end_of_buffer, f"ADDRESS_LENGTH does not match detected END_OF_BUFFER {ADDRESS_LENGTH} != {end_of_buffer,}"
+    assert ADDRESS_LENGTH == end_of_buffer, f"ADDRESS_LENGTH does not match detected END_OF_BUFFER {ADDRESS_LENGTH} != {end_of_buffer}"
 
     await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
 
@@ -609,8 +631,18 @@ async def test_usbdev(dut):
     ## Check FSM(main) state currently is ATTACHED
     assert fsm_state_expected(dut, 'main', 'ATTACHED')
 
+
+    v = dut.uio_in.value
+    nv = v & ~(1 << POWER_BITID)
+    dut._log.warning("POWER_BITID POWER_BITID={} {} bv={} v={} nv={}".format(POWER_BITID, 1 << POWER_BITID, str(dut.uio_in.value), str(v), str(nv)))
+
     # Receiver started for a start writeEnable of DP&DM is set
     signal_power_change(dut, True)	# POWER uio_in bit3
+
+    v = dut.uio_in.value
+    nv = v & ~(1 << POWER_BITID)
+    dut._log.warning("POWER_BITID POWER_BITID={} {} bv={} v={} nv={}".format(POWER_BITID, 1 << POWER_BITID, str(dut.uio_in.value), str(v), str(nv)))
+
 
     await ClockCycles(dut.clk, 4)	# to let FSM update
 
@@ -705,7 +737,7 @@ async def test_usbdev(dut):
     assert data & INTR_RESET == 0, f"REG_INTERRUPT expected to see: RESET bit clear"
 
     # FIXME understand the source of this interrupt (it seems RESET+DISCONNECT are raised at the same time)
-    # FIXME ok understood, it is due to SE0 state being held ?
+    # FIXME ok understood, it is due to 'pullup/power' falling edge ?
     # REG_INTERRUPT also has 0x0010000 set for DISCONNECT
     #assert data & INTR_DISCONNECT != 0, f"REG_INTERRUPT expected to see: DISCONNECT bit set"
     #await ttwb.wb_write(REG_INTERRUPT, INTR_DISCONNECT, regwr)	# W1C
@@ -729,10 +761,11 @@ async def test_usbdev(dut):
     ##############################################################################################
 
     # These were defered so speed up the RESET simulation part
-    await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.phy_logic.rx_packet_stateReg_string', 'rx_packet'))
-    await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.phy_logic.tx_frame_stateReg_string',  'tx_frame'))
-    await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.active_stateReg_string',   'active'))
-    await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.token_stateReg_string',    'token'))
+    if not GL_TEST:
+        await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.phy_logic.rx_packet_stateReg_string', 'rx_packet'))
+        await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.phy_logic.tx_frame_stateReg_string',  'tx_frame'))
+        await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.active_stateReg_string',   'active'))
+        await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.token_stateReg_string',    'token'))
     
     ##############################################################################################
 
@@ -2407,7 +2440,15 @@ async def test_usbdev(dut):
         ## Check FSM(main) state is currently ACTIVE
         assert fsm_state_expected(dut, 'main', 'ACTIVE')
 
-        ## FIXME check on entry value set for usage, to validate on exit they were cleared
+        ## Check on entry value set for usage, to validate on exit they were cleared
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        assert data & 0x00000800 != 0, f"REG_FRAME expects non-zero frameValid {data:08x}"
+        assert data & 0x07ff0000 != 0, f"REG_FRAME expects non-zero keepaliveCount {data:08x}"
+
 
         await usb.send_SE0()	# !D+ bit0 !D- bit1 = SE0 RESET
 
@@ -2457,12 +2498,72 @@ async def test_usbdev(dut):
         ## Check FSM(main) state goes to ACTIVE_INIT
         assert fsm_state_expected(dut, 'main', 'ACTIVE_INIT')
 
-        ## FIXME now we've dealt with interrupts check regs
         ## FIXME on matter is to confirm we are back listening to the default address and the address filter is reset
         ##       this test assumes we changed address before the reset and tested the address filter
+        data = await ttwb.wb_read(REG_FRAME, regrd)
+        assert data & 0x00000800 == 0, f"REG_FRAME expects zero frameValid {data:08x}"
+        assert data & 0x07ff0000 == 0, f"REG_FRAME expects zero keepaliveCount {data:08x}"
 
         debug(dut, '970_USB_RESET_END')
         await usb.set_idle()
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+
+    ####
+    #### 980 DISCONNECT detection and interrupt generation
+    ####
+
+    if run_this_test(True):
+        debug(dut, '980_USB_DISCONNECT')
+
+        if not GL_TEST:		# fsm_state's are not visible
+            assert fsm_state_expected(dut, 'main', 'ACTIVE')
+
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        dut._log.info("POWER_BITID POWER_BITID={} {} uio_in={}".format(POWER_BITID, 1 << POWER_BITID, str(dut.uio_in.value)))
+
+        signal_power_change(dut, False)		# POWER uio_in bit3
+
+        count = None
+        if not GL_TEST:		# fsm_state's are not visible
+            count = 0
+            while fsm_state(dut, 'main') != 'ATTACHED':
+                await ClockCycles(dut.clk, 1)
+                count += 1
+                dut._log.info("DISCONNECT count={} main={}".format(count, fsm_state(dut, 'main')))
+                if count > 100:
+                    break
+            if count == 0:
+                await ClockCycles(dut.clk, 1)	# This is to ensure the signal_power_change() signal stick before next WB access
+            dut._log.info("DISCONNECT count={} main={}".format(count, fsm_state(dut, 'main')))
+
+        debug(dut, '981_USB_DISCONNECT_CHECK')
+
+        if not GL_TEST:		# fsm_state's are not visible
+            ## Check FSM(main) state goes back to ATTACHED
+            assert fsm_state_expected(dut, 'main', 'ATTACHED')
+            assert count <= 4, f"main={fsm_state(dut, 'main')} took more than 4 cycles to occur"
+
+        bf = await wait_for_signal_interrupts(dut, not_after=TICKS_PER_BIT)
+        assert bf != 0, f"wait_for_interrupt did not occur within {TICKS_PER_BIT} cycles"
+
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+
+        # This is due to 'pullup/power' falling edge
+        # REG_INTERRUPT also has 0x0010000 set for DISCONNECT
+        assert data & INTR_DISCONNECT != 0, f"REG_INTERRUPT expected to see: DISCONNECT bit set"
+        await ttwb.wb_write(REG_INTERRUPT, INTR_DISCONNECT, regwr)	# W1C
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        assert data & INTR_DISCONNECT == 0, f"REG_INTERRUPT expected to see: DISCONNECT bit clear"
+
+        assert data == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{data:08x}"
+
+        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)
+
+
+        debug(dut, '982_USB_DISCONNECT_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
 
     debug(dut, '999_DONE')

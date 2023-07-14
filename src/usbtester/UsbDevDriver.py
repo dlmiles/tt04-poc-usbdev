@@ -194,15 +194,24 @@ class UsbDevDriver():
         assert self.dut.dut.usb_dm_write.value.is_resolvable == False,   f"self.dut.dut.usb_dm_write = {str(self.dut.dut.usb_dm_write.value)}"
 
 
+    INTERRUPTS_BITID = 2
+
+    def signal_interrupts(self) -> bool:
+        return extract_bit(self.dut.uio_out, INTERRUPTS_BITID)
+
+    # There is a better version for testing in test_usbdev.py maybe move it here?
     async def wait_for_interrupt(self, cycles: int = None) -> int:
         if cycles is None:
             cycles = 1000000
 
+        bf = self.signal_interrupts()
         for i in range(0, cycles):
-            while self.dut.interrupt.value == 0:
-                await ClockCycles(self.dut.clk, 1)
+            if bf:
+                break
+            await ClockCycles(self.dut.clk, 1)
+            bf = self.signal_interrupts()
 
-        if self.dut.interrupt.value == 0:
+        if not bf:
             return None
 
         value = await self.bus.wb_read(REG_INTERRUPT, regrd)

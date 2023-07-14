@@ -5,6 +5,8 @@
 #
 #
 #
+from typing import Any
+
 import cocotb
 #import cocotb.task #import Task
 from cocotb.triggers import ClockCycles
@@ -12,13 +14,12 @@ from cocotb.binary import BinaryValue
 from cocotb.utils import get_sim_time
 
 from .cocotbutil import *
+from .SignalAccessor import *
 
 
 # This class is a Signal (output) monitor.
 #
 class SignalOutput():
-    dut = None
-
     task = None
     running = None
     assert_resolvable = None
@@ -40,7 +41,7 @@ class SignalOutput():
 
     def __init__(self, dut):
         assert dut is not None
-        self.dut = dut
+        self._dut = dut
         self.running = False
         return None
 
@@ -120,16 +121,22 @@ class SignalOutput():
         dut._log.info("SignalOutput[{}]: finished = {}".format(self.label, retval))
         return retval
 
-    def register(self, label: str, signal_path_dp: str, signal_path_dm: str) -> cocotb.Task:
+    # dp_sa_or_path: SignalAccessor|str
+    # dm_sa_or_path: SignalAccessor|str
+    def register(self, label: str, dp_sa_or_path: Any, dm_sa_or_path: Any) -> cocotb.Task:
         self.unregister()
 
-        signal_dp = design_element(self.dut, signal_path_dp)
-        if signal_dp is None:
-            raise Exception(f"signal {signal_path_dp} does not exist")
+        (signal_dp, signal_path_dp) = SignalAccessor.build(self._dut, dp_sa_or_path)
 
-        signal_dm = design_element(self.dut, signal_path_dm)
-        if signal_dm is None:
-            raise Exception(f"signal {signal_path_dm} does not exist")
+        #signal_dp = design_element(self._dut, signal_path_dp)
+        #if signal_dp is None:
+        #    raise Exception(f"signal {signal_path_dp} does not exist")
+
+        (signal_dm, signal_path_dm) = SignalAccessor.build(self._dut, dm_sa_or_path)
+
+        #signal_dm = design_element(self._dut, signal_path_dm)
+        #if signal_dm is None:
+        #    raise Exception(f"signal {signal_path_dm} does not exist")
 
         self.label = label
 
@@ -144,7 +151,7 @@ class SignalOutput():
         self.wait_since_count = 0
 
         self.running = True
-        self.task = cocotb.create_task(self.monitor_coroutine(self.dut))
+        self.task = cocotb.create_task(self.monitor_coroutine(self._dut))
 
         return self.task
 
