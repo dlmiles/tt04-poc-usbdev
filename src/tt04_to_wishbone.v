@@ -329,7 +329,7 @@ module tt04_to_wishbone #(
                 //pos_next <= 2;
             end
         end else begin
-            out8 = DI[0 +: 8]; // 8'bxxxxxxxx; debugging
+            out8 <= DI[0 +: 8]; // 8'bxxxxxxxx; debugging
         end
     end
 
