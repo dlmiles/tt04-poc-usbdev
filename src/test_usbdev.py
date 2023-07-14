@@ -143,7 +143,8 @@ def exclude_re_path(path: str, name: str):
             return False
     return True
 
-
+# This is used as detection of gatelevel testing, with a flattened HDL,
+#  we can only inspect the external module signals and disable internal signal inspection.
 def resolve_GL_TEST():
     gl_test = False
     if 'GL_TEST' in os.environ:
@@ -286,10 +287,12 @@ def fsm_signal_path(label: str) -> str:
 
 # signal: NonHierarchyObject|BinaryValue
 def fsm_printable(signal) -> str:
+    is_string = False
     if isinstance(signal, cocotb.handle.NonHierarchyObject):
+        is_string = signal._path.endswith('_string')
         value = signal.value
     assert isinstance(value, BinaryValue)
-    if value.is_resolvable: # and signal._path.endswith('_string'):
+    if value.is_resolvable and is_string: # and signal._path.endswith('_string'):
         # Convert to string
         return value.buff.decode('ascii').rstrip()
     else:
@@ -583,17 +586,23 @@ async def test_usbdev(dut):
 
     await driver.poweron()
     await driver.do_config_global_enable(True)
-    await driver.setup()
+    await driver.initialize_hardware()
     await driver.do_config_interrupt_enable(True)
 
     ## FIXME need to understand/define power on expectations
-    SO.assert_resolvable_mode()		# disable checking
+    if not GL_TEST:
+        SO.assert_resolvable_mode()		# disable checking (simulation)
     SO.assert_encoded_mode()		# disable checking
 
     await driver.do_config_pullup(True)
 
-    SO.assert_resolvable_mode(False)	# x state outputs
-    SO.assert_encoded_mode(SO.X)	# x state outputs
+    # FIXME we should provide SO visibility on OE bits
+    if GL_TEST:
+        SO.assert_resolvable_mode(True)		# 0 state outputs
+        SO.assert_encoded_mode(SO.DM)		# 0 state outputs (gatelevel)
+    else:
+        SO.assert_resolvable_mode(False)	# x state outputs
+        SO.assert_encoded_mode(SO.X)		# x state outputs (simulation)
 
     await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
     await ttwb.wb_dump(REG_FRAME, 4)
@@ -614,22 +623,23 @@ async def test_usbdev(dut):
     OVERSAMPLE = 4	# 48MHz / 12MHz
     TICKS_PER_BIT = PHY_CLK_FACTOR * OVERSAMPLE if(not LOW_SPEED) else PHY_CLK_FACTOR * OVERSAMPLE * 8
 
-    # Why are both the WriteEnable high for output at startup ?  With both D+/D- low.  SE0 condx
-    dut._log.info("{} = {}".format(dut.dut.usb_dm_write._path, str(dut.dut.usb_dm_write.value)))
-    dut._log.info("{} = {}".format(dut.dut.usb_dm_writeEnable._path, str(dut.dut.usb_dm_writeEnable.value)))
-    dut._log.info("{} = {}".format(dut.dut.usb_dp_write._path, str(dut.dut.usb_dp_write.value)))
-    dut._log.info("{} = {}".format(dut.dut.usb_dp_writeEnable._path, str(dut.dut.usb_dp_writeEnable.value)))
-    #assert dut.dut.usb_dm_write.value == 0, f"{dut.dut.usb_dm_write._path} = {str(dut.dut.usb_dm_write.value)}"
-    assert dut.dut.usb_dm_writeEnable.value == 0
-    #assert dut.dut.usb_dp_write.value == 0
-    assert dut.dut.usb_dp_writeEnable.value == 0
+    if not GL_TEST:
+        # Why are both the WriteEnable high for output at startup ?  With both D+/D- low.  SE0 condx
+        dut._log.info("{} = {}".format(dut.dut.usb_dm_write._path, str(dut.dut.usb_dm_write.value)))
+        dut._log.info("{} = {}".format(dut.dut.usb_dm_writeEnable._path, str(dut.dut.usb_dm_writeEnable.value)))
+        dut._log.info("{} = {}".format(dut.dut.usb_dp_write._path, str(dut.dut.usb_dp_write.value)))
+        dut._log.info("{} = {}".format(dut.dut.usb_dp_writeEnable._path, str(dut.dut.usb_dp_writeEnable.value)))
+        #assert dut.dut.usb_dm_write.value == 0, f"{dut.dut.usb_dm_write._path} = {str(dut.dut.usb_dm_write.value)}"
+        assert dut.dut.usb_dm_writeEnable.value == 0
+        #assert dut.dut.usb_dp_write.value == 0
+        assert dut.dut.usb_dp_writeEnable.value == 0
 
     if LOW_SPEED:
         await ttwb.wb_write(REG_CONFIG, 0x00000040)	# bit6 LOW_SPEED
         # FIXME consider separate control bit for TIP inversion (D+/D-) at this time that is linked
 
-    ## Check FSM(main) state currently is ATTACHED
-    assert fsm_state_expected(dut, 'main', 'ATTACHED')
+    if not GL_TEST:	## Check FSM(main) state currently is ATTACHED
+        assert fsm_state_expected(dut, 'main', 'ATTACHED')
 
 
     v = dut.uio_in.value
@@ -646,8 +656,8 @@ async def test_usbdev(dut):
 
     await ClockCycles(dut.clk, 4)	# to let FSM update
 
-    ## Check FSM(main) state goes to POWERED
-    assert fsm_state_expected(dut, 'main', 'POWERED')
+    if not GL_TEST:    ## Check FSM(main) state goes to POWERED
+        assert fsm_state_expected(dut, 'main', 'POWERED')
 
     await ClockCycles(dut.clk, 128)
 
@@ -700,7 +710,10 @@ async def test_usbdev(dut):
             dut._log.warning("You are building GDS for production but are using UsbDeviceTop.v with simulation modified timer values".format(reset_ticks, ticks))
             exit(1)	## failure ?
 
-    #ticks = 0		## DISABLE
+    # At this time if we a GL_TEST then that is always with production system values
+    if GL_TEST:
+        ticks = reset_ticks		## FORCE PRODUCTION
+        dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) GL_TEST mode forces PRODUCTION test mode = {}".format(reset_ticks, ticks))
 
     if ticks > 0:
         PER_ITER = 38400
@@ -727,7 +740,7 @@ async def test_usbdev(dut):
     #assert elapsed_after_factor < tolmin, f"USB RESET wall-clock elapsed is too short {elapsed_after_factor} > {tolmin}"
     #assert elapsed_after_factor > tolmax, f"USB RESET wall-clock elapsed is too long {elapsed_after_factor} > {tolmax}"
 
-    assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+    assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
     # REG_INTERRUPT also has 0x0001000 set for RESET
     data = await ttwb.wb_read(REG_INTERRUPT, regrd)
@@ -746,10 +759,10 @@ async def test_usbdev(dut):
 
     assert data == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{data:08x}"
 
-    assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+    assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
-    ## Check FSM(main) state goes to ACTIVE_INIT
-    assert fsm_state_expected(dut, 'main', 'ACTIVE_INIT')
+    if not GL_TEST:	## Check FSM(main) state goes to ACTIVE_INIT
+        assert fsm_state_expected(dut, 'main', 'ACTIVE_INIT')
 
     ## LS mode is setup by IDLE state D- assertion
     ## HS mode (default) is setup by IDLE state D+ assertion
@@ -774,8 +787,8 @@ async def test_usbdev(dut):
 
         await usb.send_idle()
 
-        ## Check FSM(main) state goes to ACTIVE
-        assert fsm_state_expected(dut, 'main', 'ACTIVE')
+        if not GL_TEST:           ## Check FSM(main) state goes to ACTIVE
+            assert fsm_state_expected(dut, 'main', 'ACTIVE')
 
         # SYNC sequence 8'b00000001  KJKJKJKK
         # FIXME check we can hold a random number of J-IDLE states here
@@ -865,7 +878,7 @@ async def test_usbdev(dut):
 
         debug(dut, '022_SETUP_BITBANG_CHECK')
         ## Manage interrupt and reset
-        assert await wait_for_signal_interrupts(dut, int(TICKS_PER_BIT/2)) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, int(TICKS_PER_BIT/2)) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT)
         assert data & INTR_EP0SETUP != 0, f"REG_INTERRUPT expected to see: EP0SETUP bit set"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0SETUP)	# UVM=W1C
@@ -984,7 +997,7 @@ async def test_usbdev(dut):
 
         # FULL_SPEED=18 LOW_SPEED=130+4 (was 64)
         wfi_limit = int((TICKS_PER_BIT/2)+2) if(LOW_SPEED) else int(TICKS_PER_BIT/2)
-        assert await wait_for_signal_interrupts(dut, wfi_limit) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, wfi_limit) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # FIXME remove this now we have wait_for_signal_interrupts()
         #await ClockCycles(dut.clk, int((TICKS_PER_BIT/2)+2))	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+2=18
@@ -999,7 +1012,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
         assert data & INTR_EP0SETUP == 0, f"REG_INTERRUPT expects EP0SETUP to clear {data:08x}"
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # Validate 8 bytes of SETUP made it into the buffer location
         data = await ttwb.wb_read(REG_SETUP0, regdesc)
@@ -1067,14 +1080,14 @@ async def test_usbdev(dut):
         #  it also has a mode desc.completionOnFull which should be more appropiately renamed to desc.completionOnOverrun
         #  but IMHO it should at least mark an error occured that is visible to the driver.
         #
-        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
 
         data = await ttwb.wb_read(REG_EP0, regrd)
@@ -1121,14 +1134,14 @@ async def test_usbdev(dut):
         await ClockCycles(dut.clk, 17)	# SIM delay to allow waiting-for-interrupt (TICKS_PER_BIT/2)+1=17
         if LOW_SPEED:
             await ClockCycles(dut.clk, 7*16)
-        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         data = await ttwb.wb_read(REG_EP0, regrd)
         assert data & 0x00000008 != 0, f"REG_EP0 expected dataPhase to be updated {data:08x}"
@@ -1341,14 +1354,14 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
@@ -1440,14 +1453,14 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
@@ -1523,14 +1536,14 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
@@ -1602,14 +1615,14 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_INFO, 4)
 
         # No interrupt due to NAK
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"	# clear due to NAK
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"	# clear due to NAK
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         #assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         #await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         #data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
@@ -1681,14 +1694,14 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_INFO, 4)
 
         # No interrupt due to STALL
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"	# clear due to STALL
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"	# clear due to STALL
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         #assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         #await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         #data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
@@ -1755,14 +1768,14 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
@@ -1829,14 +1842,14 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
@@ -1903,14 +1916,14 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"	# NOINT
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"	# NOINT
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         #assert data & INTR_EP0 != 0, f"REG_INTERRUPT expects EP0 to fire {data:08x}"
         #await ttwb.wb_write(REG_INTERRUPT, INTR_EP0, regwr)
         #data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0 == 0, f"REG_INTERRUPT expects EP0 to clear {data:08x}"
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
@@ -1993,14 +2006,14 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP1 != 0, f"REG_INTERRUPT expects EP1 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP1, regwr)
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP1 == 0, f"REG_INTERRUPT expects EP1 to clear {data:08x}"
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_40, lambda v,a: desc0_format(v))
@@ -2093,14 +2106,14 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_CONFIG, 4)
         await ttwb.wb_dump(REG_INFO, 4)
 
-        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP1 != 0, f"REG_INTERRUPT expects EP1 to fire {data:08x}"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP1, regwr)
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP1 == 0, f"REG_INTERRUPT expects EP1 to clear {data:08x}"
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # Validate expected descriptor state
         data = await ttwb.wb_read(BUF_DESC0_40, lambda v,a: desc0_format(v))
@@ -2372,7 +2385,7 @@ async def test_usbdev(dut):
 
             data = await ttwb.wb_read(REG_INTERRUPT, regrd)
             assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-            assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+            assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
 
             debug(dut, f"{testid+3}{testname}_END")
@@ -2423,7 +2436,7 @@ async def test_usbdev(dut):
 
             data = await ttwb.wb_read(REG_INTERRUPT, regrd)
             assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-            assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+            assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
             debug(dut, f"{testid+3}{testname}_END")
             await ClockCycles(dut.clk, TICKS_PER_BIT*32)
@@ -2437,13 +2450,13 @@ async def test_usbdev(dut):
     if run_this_test(True):
         debug(dut, '970_USB_RESET')
 
-        ## Check FSM(main) state is currently ACTIVE
-        assert fsm_state_expected(dut, 'main', 'ACTIVE')
+        if not GL_TEST:        ## Check FSM(main) state is currently ACTIVE
+            assert fsm_state_expected(dut, 'main', 'ACTIVE')
 
         ## Check on entry value set for usage, to validate on exit they were cleared
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         data = await ttwb.wb_read(REG_FRAME, regrd)
         assert data & 0x00000800 != 0, f"REG_FRAME expects non-zero frameValid {data:08x}"
@@ -2482,7 +2495,7 @@ async def test_usbdev(dut):
         debug(dut, '970_USB_RESET_CHECK')
 
         # REG_INTERRUPT also has 0x0001000 set for RESET
-        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_RESET != 0, f"REG_INTERRUPT expected to see: RESET bit set"
         await ttwb.wb_write(REG_INTERRUPT, INTR_RESET, regwr)	# W1C
@@ -2493,10 +2506,10 @@ async def test_usbdev(dut):
 
         assert data == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{data:08x}"
 
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
-        ## Check FSM(main) state goes to ACTIVE_INIT
-        assert fsm_state_expected(dut, 'main', 'ACTIVE_INIT')
+        if not GL_TEST:        ## Check FSM(main) state goes to ACTIVE_INIT
+            assert fsm_state_expected(dut, 'main', 'ACTIVE_INIT')
 
         ## FIXME on matter is to confirm we are back listening to the default address and the address filter is reset
         ##       this test assumes we changed address before the reset and tested the address filter
@@ -2518,7 +2531,7 @@ async def test_usbdev(dut):
         if not GL_TEST:		# fsm_state's are not visible
             assert fsm_state_expected(dut, 'main', 'ACTIVE')
 
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
         dut._log.info("POWER_BITID POWER_BITID={} {} uio_in={}".format(POWER_BITID, 1 << POWER_BITID, str(dut.uio_in.value)))
 
         signal_power_change(dut, False)		# POWER uio_in bit3
@@ -2557,7 +2570,7 @@ async def test_usbdev(dut):
 
         assert data == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{data:08x}"
 
-        assert signal_interrupts(dut) == False, f"interrupts = {str(dut.dut.interrupts.value)} unexpected state"
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         await ClockCycles(dut.clk, TICKS_PER_BIT*16)
 

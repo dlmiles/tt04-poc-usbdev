@@ -14,7 +14,9 @@ from usbtester.cocotbutil import *
 from usbtester.TT2WB import TT2WB, ADR_MASK, CMD_IDLE, CMD_EXEC, CMD_AD0, CMD_AD1, CMD_DO0, CMD_DO3, CMD_DI0, CMD_DI3, EXE_RESET, EXE_WBSEL, EXE_DISABLE, EXE_ENABLE, EXE_READ, EXE_WRITE, ACK_BITID
 
 
-GL_TEST = 'GL_TEST' in os.environ and os.environ['GL_TEST'] != 'false'
+# This is used as detection of gatelevel testing, with a flattened HDL,
+#  we can only inspect the external module signals and disable internal signal inspection.
+GL_TEST = ('GL_TEST' in os.environ and os.environ['GL_TEST'] != 'false') or ('GATES' in os.environ and os.environ['GATES'] != 'no')
 
 
 def format_value(v) -> str:

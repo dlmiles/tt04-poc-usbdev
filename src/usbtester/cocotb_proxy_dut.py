@@ -174,13 +174,13 @@ class ProxyDut(object):
     # proxying (special cases)
     #
     def __getattribute__(self, name):
-        print(f"ProxyDut.__getattribute__(name={name}) {type(name)}")
         try:
             #if getattr(object.__getattribute__(self, "_obj"), "_proxy_match_name")(name):
             #    retval = getattr(object.__getattribute__(self, "_obj"), name)
             #else:
             retval = getattr(object.__getattribute__(self, "_obj"), name)
         except AttributeError as exc:
+            print(f"ProxyDut.__getattribute__(name={name}) {type(name)}")
             pm = object.__getattribute__(self, "_proxy_match_name")
             hierarchy_path = object.__getattribute__(self, "_hierarchy_path")
             path = hierarchy_path + '.' + name if(hierarchy_path) else name

@@ -158,6 +158,7 @@ class SignalOutput():
     def assert_resolvable_mode(self, mode: bool = None) -> bool:
         assert mode is None or type(mode) is bool
         retval = self.assert_resolvable
+        self._dut._log.info("SignalOutput.assert_resolvable_mode({}) = {} (old)".format(mode, retval))
         self.assert_resolvable = mode
         return retval
 
@@ -165,6 +166,7 @@ class SignalOutput():
     def assert_encoded_mode(self, mode: str = None) -> str:
         assert mode is None or type(mode) is str
         retval = self.assert_encoded
+        self._dut._log.info("SignalOutput.assert_encoded_mode({}) = {} (old)".format(mode, retval))
         self.assert_encoded = mode
         return retval
 
