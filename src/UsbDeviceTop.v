@@ -1389,9 +1389,9 @@ module UsbDevicePhyNative (
     end
   end
 
-  assign rx_timerLong_resume = (rx_timerLong_counter == 23'h00953f);
-  assign rx_timerLong_reset = (rx_timerLong_counter == 23'h004a3f);
-  assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h0015bf);
+  assign rx_timerLong_resume = (rx_timerLong_counter == 23'h00ba8f);
+  assign rx_timerLong_reset = (rx_timerLong_counter == 23'h005ccf);
+  assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h001b2f);
   assign rx_timerLong_oneBit = (rx_timerLong_counter == 23'h000002);
   assign rx_timerLong_threeBit = (rx_timerLong_counter == 23'h00000a);
   assign rx_timerLong_lowSpeed = io_ctrl_lowSpeed;

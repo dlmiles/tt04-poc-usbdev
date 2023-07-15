@@ -39,9 +39,13 @@ done
 #    assign rx_timerLong_resume = (rx_timerLong_counter == 23'h0012a7);
 #    assign rx_timerLong_reset = (rx_timerLong_counter == 23'h000947);
 #    assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h0002b7);
-# SIM (LS 1/25),
-#          tried at 1/40 but it is on the limit of firing a spurious suspend from specification packet
+# SIM (LS 1/20 current)
+#          tried at 1/25 but it is on the limit of firing a spurious suspend from specification packet
 #          sizes with not enough gap between tests to allow us to setup testing comfortably
+#    assign rx_timerLong_resume = (rx_timerLong_counter == 23'h00ba8f);
+#    assign rx_timerLong_reset = (rx_timerLong_counter == 23'h005ccf);
+#    assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h001b2f);
+# SIM (LS 1/25 old)
 #    assign rx_timerLong_resume = (rx_timerLong_counter == 23'h00953f);
 #    assign rx_timerLong_reset = (rx_timerLong_counter == 23'h004a3f);
 #    assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h0015bf);
@@ -55,7 +59,12 @@ then
 		target__resume="0012a7"
 		target___reset="000947"
 		target_suspend="0002b7"
-	elif [ "$ask" = "LS" ]
+	elif [ "$ask" = "LS" ]		# 1/20 current
+	then
+		target__resume="00ba8f"
+		target___reset="005ccf"
+		target_suspend="001b2f"
+	elif [ "$ask" = "LS25" ]	# 1/25 old
 	then
 		target__resume="00953f"
 		target___reset="004a3f"
@@ -70,7 +79,11 @@ then
 	sed -e "s#rx_timerLong_counter == 23'h0012a7#rx_timerLong_counter == 23'h${target__resume}#" -i UsbDeviceTop.v
 	sed -e "s#rx_timerLong_counter == 23'h000947#rx_timerLong_counter == 23'h${target___reset}#" -i UsbDeviceTop.v
 	sed -e "s#rx_timerLong_counter == 23'h0002b7#rx_timerLong_counter == 23'h${target_suspend}#" -i UsbDeviceTop.v
-	# LS
+	# LS 1/20 (current)
+	sed -e "s#rx_timerLong_counter == 23'h00ba8f#rx_timerLong_counter == 23'h${target__resume}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == 23'h005ccf#rx_timerLong_counter == 23'h${target___reset}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == 23'h001b2f#rx_timerLong_counter == 23'h${target_suspend}#" -i UsbDeviceTop.v
+	# LS 1/25 (old)
 	sed -e "s#rx_timerLong_counter == 23'h00953f#rx_timerLong_counter == 23'h${target__resume}#" -i UsbDeviceTop.v
 	sed -e "s#rx_timerLong_counter == 23'h004a3f#rx_timerLong_counter == 23'h${target___reset}#" -i UsbDeviceTop.v
 	sed -e "s#rx_timerLong_counter == 23'h0015bf#rx_timerLong_counter == 23'h${target_suspend}#" -i UsbDeviceTop.v
@@ -125,6 +138,21 @@ then
 	found="FS"
 fi
 
+if      echo -n "$grep_resume"  | egrep -q "'h00ba8f\W" &&
+	echo -n "$grep_reset"   | egrep -q "'h005ccf\W" &&
+	echo -n "$grep_suspend" | egrep -q "'h001b2f\W"
+then
+	if [ $verbose -gt 0 ]
+	then
+		echo "### $grep_resume"
+		echo "### $grep_reset"
+		echo "### $grep_suspend"
+		echo "#################################################"
+		echo "$VERILOG_FILE: LOW_SPEED simulation only 1/20"
+	fi
+	found="LS"
+fi
+
 if      echo -n "$grep_resume"  | egrep -q "'h00953f\W" &&
 	echo -n "$grep_reset"   | egrep -q "'h004a3f\W" &&
 	echo -n "$grep_suspend" | egrep -q "'h0015bf\W"
@@ -135,7 +163,7 @@ then
 		echo "### $grep_reset"
 		echo "### $grep_suspend"
 		echo "#################################################"
-		echo "$VERILOG_FILE: LOW_SPEED simulation only 1/25"
+		echo "$VERILOG_FILE: LOW_SPEED simulation only 1/25 (old)"
 	fi
 	found="LS"
 fi

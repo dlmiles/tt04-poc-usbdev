@@ -214,9 +214,13 @@ def grep_file(filename: str, pattern1: str, pattern2: str) -> bool:
     #    assign rx_timerLong_resume = (rx_timerLong_counter == 23'h0012a7);
     #    assign rx_timerLong_reset = (rx_timerLong_counter == 23'h000947);
     #    assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h0002b7);
-    # SIM (LS 1/25),
-    #          tried at 1/40 but it is on the limit of firing a spurious suspend from specification packet
+    # SIM (LS 1/20 current)
+    #          tried at 1/25 but it is on the limit of firing a spurious suspend from specification packet
     #          sizes with not enough gap between tests to allow us to setup testing comfortably
+    #    assign rx_timerLong_resume = (rx_timerLong_counter == 23'h00ba8f);
+    #    assign rx_timerLong_reset = (rx_timerLong_counter == 23'h005ccf);
+    #    assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h001b2f);
+    # SIM (LS 1/25 old)
     #    assign rx_timerLong_resume = (rx_timerLong_counter == 23'h00953f);
     #    assign rx_timerLong_reset = (rx_timerLong_counter == 23'h004a3f);
     #    assign rx_timerLong_suspend = (rx_timerLong_counter == 23'h0015bf);
@@ -364,6 +368,8 @@ async def test_usbdev(dut):
     #
     # 192MHz = 5208.333ps  (48MHzx4)  this is 1/15624 out
     #
+    CLOCK = 192000000
+    CLOCK_MHZ = CLOCK / 1000000
     clock = Clock(dut.clk, 5208, units="ps")	# 5208.3333  192MHz
     cocotb.start_soon(clock.start())
 
@@ -704,11 +710,11 @@ async def test_usbdev(dut):
             dut._log.warning("You are building GDS for production but are using UsbDeviceTop.v with simulation modified timer values".format(reset_ticks, ticks))
             exit(1)	## failure ?
 
-    ##                                             ## 23'h004a3f  1/25  LS
-    if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h004a3f"):
-        sim_timerLong_factor = 25
-        ticks = int(reset_ticks / sim_timerLong_factor)	## ENABLE 1/25th
-        dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-timerLong-25xspeedup (USB LOW_SPEED test mode) = {}".format(reset_ticks, ticks))
+    ##                                             ## 23'h004a3f  1/20  LS
+    if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h005ccf"):
+        sim_timerLong_factor = 20
+        ticks = int(reset_ticks / sim_timerLong_factor)	## ENABLE 1/20th
+        dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-timerLong-20xspeedup (USB LOW_SPEED test mode) = {}".format(reset_ticks, ticks))
         if 'CI' in os.environ and os.environ['CI'] != 'false':
             dut._log.warning("You are building GDS for production but are using UsbDeviceTop.v with simulation modified timer values".format(reset_ticks, ticks))
             exit(1)	## failure ?
@@ -722,7 +728,7 @@ async def test_usbdev(dut):
         PER_ITER = 38400
         await clockcycles_with_progress(dut, ticks, PER_ITER,
             lambda t: "RESET ticks = {} of {} {:3d}%".format(t, ticks, int((t / ticks) * 100.0)),
-            lambda t: "RESET ticks = {} ({}-per-iteration)".format(ticks, PER_ITER)
+            lambda t: "RESET ticks = {} @{}MHz speedup=x{} ({}-per-iteration)".format(ticks, CLOCK_MHZ, sim_timerLong_factor, PER_ITER)
         )
     else:
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SKIPPED".format(reset_ticks))
@@ -1999,7 +2005,6 @@ async def test_usbdev(dut):
         ## FIXME make a delay, to then observe NO automatic ACK occured
         await ClockCycles(dut.clk, TICKS_PER_BIT*64)
         await ClockCycles(dut.clk, TICKS_PER_BIT*12)
-        await ClockCycles(dut.clk, TICKS_PER_BIT*128)
 
         await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
         await ttwb.wb_dump(REG_FRAME, 4)
@@ -2099,7 +2104,8 @@ async def test_usbdev(dut):
         debug(dut, '752_ISO_IN_NO_RX_ACK')
         ## FIXME perform a delay, to then observe NO automatic ACK occured
         await ClockCycles(dut.clk, TICKS_PER_BIT*64)
-        await ClockCycles(dut.clk, TICKS_PER_BIT*12)
+        if not LOW_SPEED or sim_timerLong_factor == 1:	# anti-SUSPEND-trigger (at 1/20 with 196MHz)
+            await ClockCycles(dut.clk, TICKS_PER_BIT*12)
 
         await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
         await ttwb.wb_dump(REG_FRAME, 4)
@@ -2155,7 +2161,9 @@ async def test_usbdev(dut):
 
 
         debug(dut, '753_ISO_IN_END')
-        await ClockCycles(dut.clk, TICKS_PER_BIT*64)
+        await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+        if not LOW_SPEED or sim_timerLong_factor == 1:	# anti-SUSPEND-trigger (at 1/20 with 196MHz)
+            await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
 
     ####
@@ -2478,7 +2486,7 @@ async def test_usbdev(dut):
             PER_ITER = 38400
             await clockcycles_with_progress(dut, ticks, PER_ITER,
                 lambda t: "RESET ticks = {} of {} {:3d}%".format(t, ticks, int((t / ticks) * 100.0)),
-                lambda t: "RESET ticks = {} ({}-per-iteration)".format(ticks, PER_ITER)
+                lambda t: "RESET ticks = {} @{}MHz speedup=x{} ({}-per-iteration)".format(ticks, CLOCK_MHZ, sim_timerLong_factor, PER_ITER)
             )
         else:
             dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SKIPPED".format(reset_ticks))
