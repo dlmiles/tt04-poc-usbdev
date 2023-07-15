@@ -719,8 +719,9 @@ async def test_usbdev(dut):
             dut._log.warning("You are building GDS for production but are using UsbDeviceTop.v with simulation modified timer values".format(reset_ticks, ticks))
             exit(1)	## failure ?
 
-    # At this time if we a GL_TEST then that is always with production system values
+    # At this time if we are GL_TEST then that is always with production system values
     if GL_TEST:
+        sim_timerLong_factor = 1
         ticks = reset_ticks		## FORCE PRODUCTION
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) GL_TEST mode forces PRODUCTION test mode = {}".format(reset_ticks, ticks))
 
