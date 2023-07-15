@@ -1869,8 +1869,6 @@ module UsbDeviceCtrl (
   reg        [3:0]    regs_interrupts_endpoints;
   reg                 regs_interrupts_reset;
   reg                 regs_interrupts_suspend;
-  reg                 io_phy_suspend_regNext;
-  wire                when_UsbDeviceCtrl_l248;
   reg                 regs_interrupts_resume;
   reg                 regs_interrupts_disconnect;
   reg                 io_phy_power_regNext;
@@ -2749,7 +2747,6 @@ module UsbDeviceCtrl (
     endcase
   end
 
-  assign when_UsbDeviceCtrl_l248 = (io_phy_suspend && (! io_phy_suspend_regNext));
   assign when_UsbDeviceCtrl_l250 = ((! io_phy_power) && io_phy_power_regNext);
   assign regs_interrupts_pending = (((((((|regs_interrupts_endpoints) || regs_interrupts_reset) || regs_interrupts_suspend) || regs_interrupts_resume) || regs_interrupts_disconnect) || regs_interrupts_ep0Setup) && regs_interrupts_enable);
   assign io_phy_resumeIt = regs_resumeIt;
@@ -4710,7 +4707,6 @@ module UsbDeviceCtrl (
       regs_interrupts_endpoints <= 4'b0000;
       regs_interrupts_reset <= 1'b0;
       regs_interrupts_suspend <= 1'b0;
-      io_phy_suspend_regNext <= 1'b0;
       regs_interrupts_resume <= 1'b0;
       regs_interrupts_disconnect <= 1'b0;
       io_phy_power_regNext <= 1'b0;
@@ -4740,13 +4736,6 @@ module UsbDeviceCtrl (
       end
       if(regs_keepaliveIncrement) begin
         regs_keepaliveCount <= (regs_keepaliveCount + 11'h001);
-      end
-      io_phy_suspend_regNext <= io_phy_suspend;
-      if(when_UsbDeviceCtrl_l248) begin
-        regs_interrupts_suspend <= 1'b1;
-      end
-      if(io_phy_resume_valid) begin
-        regs_interrupts_resume <= 1'b1;
       end
       io_phy_power_regNext <= io_phy_power;
       if(when_UsbDeviceCtrl_l250) begin
