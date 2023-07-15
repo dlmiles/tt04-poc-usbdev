@@ -333,16 +333,19 @@ def monitor(dut, signal, prefix: str = None) -> None:
     pfx = prefix if(prefix) else signal.path
 
     value = signal.value
+    value_str = str(value)
     dut._log.info("monitor({}) = {} [STARTED]".format(pfx, fsm_printable(signal.raw)))
 
     while True:
         # in generator-based coroutines triggers are yielded
         yield ClockCycles(dut.clk, 1)
         new_value = signal.value
-        if new_value != value:
+        new_value_str = str(new_value)
+        if new_value_str != value_str:
             s = fsm_printable(signal.raw)
             dut._log.info("monitor({}) = {}".format(pfx, s))
             value = new_value
+            value_str = new_value_str
 
 
 ## FIXME fix the cocotb timebase for 100MHz and 48MHz (or 192MHz and 48MHz initially - done)
@@ -896,7 +899,7 @@ async def test_usbdev(dut):
         assert data & 0xfff00000 == 0x00000000,         f"DESC0.unused expected unused={data:08x}"
         data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
         assert data & 0x0000fff0 == 0x00000000,         f"DESC1.next not as expected {data:08x}"
-        assert data & 0xffff0000 == 20 << 16,            f"DESC1.length not as expected {data:08x}"	# FIXME is this correct?
+        assert data & 0xffff0000 == 20 << 16,           f"DESC1.length not as expected {data:08x}"	# FIXME is this correct?
         assert data & 0x0000000f == 0x00000000,         f"DESC1.unused not as expected {data:08x}"
         data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00010000,         f"DESC2.direction not as expected {data:08x}"
