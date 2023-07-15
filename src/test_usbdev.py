@@ -882,10 +882,10 @@ async def test_usbdev(dut):
         debug(dut, '022_SETUP_BITBANG_CHECK')
         ## Manage interrupt and reset
         assert await wait_for_signal_interrupts(dut, int(TICKS_PER_BIT/2)) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
-        data = await ttwb.wb_read(REG_INTERRUPT)
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0SETUP != 0, f"REG_INTERRUPT expected to see: EP0SETUP bit set"
-        await ttwb.wb_write(REG_INTERRUPT, INTR_EP0SETUP)	# UVM=W1C
-        data = await ttwb.wb_read(REG_INTERRUPT)
+        await ttwb.wb_write(REG_INTERRUPT, INTR_EP0SETUP, regwr)	# UVM=W1C
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0SETUP == 0, f"REG_INTERRUPT expected to see: EP0SETUP bit clear"
         assert data == 0, f"REG_INTERRUPT expected to see: all bits clear 0x{data:08x}"
 
@@ -922,9 +922,9 @@ async def test_usbdev(dut):
         assert data & 0x003e0000 == 0x00000000,         f"ENDP.unused not as expected {data:08x}"
 
         # Validate 8 bytes of SETUP made it into the buffer location
-        data = await ttwb.wb_read(REG_SETUP0)
+        data = await ttwb.wb_read(REG_SETUP0, regrd)
         assert data == setup[0], f"SETUP0 expected to see: SETUP payload+0 0x{setup[0]:08x} is 0x{data:08x}"
-        data = await ttwb.wb_read(REG_SETUP1)
+        data = await ttwb.wb_read(REG_SETUP1, regrd)
         assert data == setup[1], f"SETUP1 expected to see: SETUP payload+4 0x{setup[1]:08x} is 0x{data:08x}"
 
 
