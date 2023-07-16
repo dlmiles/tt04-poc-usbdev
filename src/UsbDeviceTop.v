@@ -34,7 +34,7 @@ module UsbDeviceTop (
   wire                ctrl_io_usb_dm_writeEnable;
   wire                ctrl_io_interrupt;
 
-  UsbDeviceWithPhyWishbone ctrl (
+  (* keep_hierarchy = "TRUE" *) UsbDeviceWithPhyWishbone ctrl (
     .io_wishbone_CYC       (wb_CYC                         ), //i
     .io_wishbone_STB       (wb_STB                         ), //i
     .io_wishbone_ACK       (ctrl_io_wishbone_ACK           ), //o
@@ -189,7 +189,7 @@ module UsbDeviceWithPhyWishbone (
   reg                 phy_buffer_dm_write_regNext;
   reg                 phy_buffer_dm_stage_read_regNext;
 
-  WishboneToBmb ctrl_bridge (
+  (* keep_hierarchy = "TRUE" *) WishboneToBmb ctrl_bridge (
     .io_input_CYC                           (io_wishbone_CYC                                         ), //i
     .io_input_STB                           (io_wishbone_STB                                         ), //i
     .io_input_ACK                           (ctrl_bridge_io_input_ACK                                ), //o
@@ -214,7 +214,7 @@ module UsbDeviceWithPhyWishbone (
     .ctrlCd_clk                             (ctrlCd_clk                                              ), //i
     .ctrlCd_reset                           (ctrlCd_reset                                            )  //i
   );
-  UsbDeviceCtrl ctrl_logic (
+  (* keep_hierarchy = "TRUE" *) UsbDeviceCtrl ctrl_logic (
     .io_ctrl_cmd_valid                    (ctrl_bridge_io_output_cmd_valid                         ), //i
     .io_ctrl_cmd_ready                    (ctrl_logic_io_ctrl_cmd_ready                            ), //o
     .io_ctrl_cmd_payload_last             (ctrl_bridge_io_output_cmd_payload_last                  ), //i
@@ -250,7 +250,7 @@ module UsbDeviceWithPhyWishbone (
     .ctrlCd_clk                           (ctrlCd_clk                                              ), //i
     .ctrlCd_reset                         (ctrlCd_reset                                            )  //i
   );
-  UsbDevicePhyNative phy_logic (
+  (* keep_hierarchy = "TRUE" *) UsbDevicePhyNative phy_logic (
     .io_ctrl_tx_stream_valid            (ctrl_ctrl_logic_io_phy_cc_output_tx_stream_valid                ), //i
     .io_ctrl_tx_stream_ready            (phy_logic_io_ctrl_tx_stream_ready                               ), //o
     .io_ctrl_tx_stream_payload_last     (ctrl_ctrl_logic_io_phy_cc_output_tx_stream_payload_last         ), //i
@@ -279,7 +279,7 @@ module UsbDeviceWithPhyWishbone (
     .phyCd_clk                          (phyCd_clk                                                       ), //i
     .phyCd_reset                        (phyCd_reset                                                     )  //i
   );
-  PhyCc ctrl_ctrl_logic_io_phy_cc (
+  (* keep_hierarchy = "TRUE" *) PhyCc ctrl_ctrl_logic_io_phy_cc (
     .input_tx_stream_valid             (ctrl_logic_io_phy_tx_stream_valid                               ), //i
     .input_tx_stream_ready             (ctrl_ctrl_logic_io_phy_cc_input_tx_stream_ready                 ), //o
     .input_tx_stream_payload_last      (ctrl_logic_io_phy_tx_stream_payload_last                        ), //i
@@ -474,7 +474,7 @@ module PhyCc (
   reg        [7:0]    ctrl_ctrl_logic_io_phy_cc_input_tx_stream_ccToggle_io_output_rData_fragment;
   wire                when_Stream_l370;
 
-  StreamCCByToggle input_tx_stream_ccToggle (
+  (* keep_hierarchy = "TRUE" *) StreamCCByToggle input_tx_stream_ccToggle (
     .io_input_valid             (input_tx_stream_valid                                   ), //i
     .io_input_ready             (input_tx_stream_ccToggle_io_input_ready                 ), //o
     .io_input_payload_last      (input_tx_stream_payload_last                            ), //i
@@ -487,7 +487,7 @@ module PhyCc (
     .ctrlCd_reset               (ctrlCd_reset                                            ), //i
     .phyCd_clk                  (phyCd_clk                                               )  //i
   );
-  PulseCCByToggle pulseCCByToggle_2 (
+  (* keep_hierarchy = "TRUE" *) PulseCCByToggle pulseCCByToggle_2 (
     .io_pulseIn                 (output_tx_eop                               ), //i
     .io_pulseOut                (pulseCCByToggle_2_io_pulseOut               ), //o
     .phyCd_clk                  (phyCd_clk                                   ), //i
@@ -495,7 +495,7 @@ module PhyCc (
     .ctrlCd_clk                 (ctrlCd_clk                                  ), //i
     .phyCd_reset_synchronized_1 (pulseCCByToggle_2_phyCd_reset_synchronized_1)  //o
   );
-  FlowCCByToggle output_rx_flow_ccToggle (
+  (* keep_hierarchy = "TRUE" *) FlowCCByToggle output_rx_flow_ccToggle (
     .io_input_valid           (output_rx_flow_valid                          ), //i
     .io_input_payload         (output_rx_flow_payload[7:0]                   ), //i
     .io_output_valid          (output_rx_flow_ccToggle_io_output_valid       ), //o
@@ -505,37 +505,37 @@ module PhyCc (
     .ctrlCd_clk               (ctrlCd_clk                                    ), //i
     .phyCd_reset_synchronized (pulseCCByToggle_2_phyCd_reset_synchronized_1  )  //i
   );
-  BufferCC_14 output_rx_active_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_14 output_rx_active_buffercc (
     .io_dataIn    (output_rx_active                    ), //i
     .io_dataOut   (output_rx_active_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                          ), //i
     .ctrlCd_reset (ctrlCd_reset                        )  //i
   );
-  BufferCC_14 output_rx_stuffingError_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_14 output_rx_stuffingError_buffercc (
     .io_dataIn    (output_rx_stuffingError                    ), //i
     .io_dataOut   (output_rx_stuffingError_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                                 ), //i
     .ctrlCd_reset (ctrlCd_reset                               )  //i
   );
-  BufferCC_2 input_pullup_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_2 input_pullup_buffercc (
     .io_dataIn   (input_pullup                    ), //i
     .io_dataOut  (input_pullup_buffercc_io_dataOut), //o
     .phyCd_clk   (phyCd_clk                       ), //i
     .phyCd_reset (phyCd_reset                     )  //i
   );
-  BufferCC_2 input_resumeIt_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_2 input_resumeIt_buffercc (
     .io_dataIn   (input_resumeIt                    ), //i
     .io_dataOut  (input_resumeIt_buffercc_io_dataOut), //o
     .phyCd_clk   (phyCd_clk                         ), //i
     .phyCd_reset (phyCd_reset                       )  //i
   );
-  BufferCC_2 input_lowSpeed_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_2 input_lowSpeed_buffercc (
     .io_dataIn   (input_lowSpeed                    ), //i
     .io_dataOut  (input_lowSpeed_buffercc_io_dataOut), //o
     .phyCd_clk   (phyCd_clk                         ), //i
     .phyCd_reset (phyCd_reset                       )  //i
   );
-  PulseCCByToggle_1 pulseCCByToggle_3 (
+  (* keep_hierarchy = "TRUE" *) PulseCCByToggle_1 pulseCCByToggle_3 (
     .io_pulseIn               (output_tick                                 ), //i
     .io_pulseOut              (pulseCCByToggle_3_io_pulseOut               ), //o
     .phyCd_clk                (phyCd_clk                                   ), //i
@@ -543,19 +543,19 @@ module PhyCc (
     .ctrlCd_clk               (ctrlCd_clk                                  ), //i
     .phyCd_reset_synchronized (pulseCCByToggle_2_phyCd_reset_synchronized_1)  //i
   );
-  BufferCC_14 output_reset_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_14 output_reset_buffercc (
     .io_dataIn    (output_reset                    ), //i
     .io_dataOut   (output_reset_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                      ), //i
     .ctrlCd_reset (ctrlCd_reset                    )  //i
   );
-  BufferCC_14 output_suspend_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_14 output_suspend_buffercc (
     .io_dataIn    (output_suspend                    ), //i
     .io_dataOut   (output_suspend_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                        ), //i
     .ctrlCd_reset (ctrlCd_reset                      )  //i
   );
-  FlowCCByToggle_1 output_resume_ccToggle (
+  (* keep_hierarchy = "TRUE" *) FlowCCByToggle_1 output_resume_ccToggle (
     .io_input_valid           (output_resume_valid                         ), //i
     .io_output_valid          (output_resume_ccToggle_io_output_valid      ), //o
     .phyCd_clk                (phyCd_clk                                   ), //i
@@ -563,13 +563,13 @@ module PhyCc (
     .ctrlCd_clk               (ctrlCd_clk                                  ), //i
     .phyCd_reset_synchronized (pulseCCByToggle_2_phyCd_reset_synchronized_1)  //i
   );
-  BufferCC_14 output_power_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_14 output_power_buffercc (
     .io_dataIn    (output_power                    ), //i
     .io_dataOut   (output_power_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                      ), //i
     .ctrlCd_reset (ctrlCd_reset                    )  //i
   );
-  BufferCC_14 output_disconnect_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_14 output_disconnect_buffercc (
     .io_dataIn    (output_disconnect                    ), //i
     .io_dataOut   (output_disconnect_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                           ), //i
@@ -820,7 +820,7 @@ module UsbDevicePhyNative (
   assign _zz_rx_packet_errorTimeout_trigger = {1'd0, rx_packet_errorTimeout_counter};
   assign _zz_tickTimer_counter_valueNext_1 = tickTimer_counter_willIncrement;
   assign _zz_tickTimer_counter_valueNext = {1'd0, _zz_tickTimer_counter_valueNext_1};
-  UsbLsFsPhyFilter rx_filter (
+  (* keep_hierarchy = "TRUE" *) UsbLsFsPhyFilter rx_filter (
     .io_lowSpeed        (io_ctrl_lowSpeed            ), //i
     .io_usb_dp          (io_usb_rx_dp                ), //i
     .io_usb_dm          (io_usb_rx_dm                ), //i
@@ -2222,7 +2222,7 @@ module UsbDeviceCtrl (
     end
   end
 
-  USBCRC5 token_crc5rx (
+  (* keep_hierarchy = "TRUE" *) USBCRC5 token_crc5rx (
     .io_data      (token_crc5rx_io_data[15:0]), //i
     .io_enable    (token_crc5rx_io_enable    ), //i
     .io_init      (token_crc5rx_io_init      ), //i
@@ -2231,7 +2231,7 @@ module UsbDeviceCtrl (
     .ctrlCd_clk   (ctrlCd_clk                ), //i
     .ctrlCd_reset (ctrlCd_reset              )  //i
   );
-  USBCRC16 dataRx_crc16rx (
+  (* keep_hierarchy = "TRUE" *) USBCRC16 dataRx_crc16rx (
     .io_data      (io_phy_rx_flow_payload[7:0]), //i
     .io_enable    (dataRx_crc16rx_io_enable   ), //i
     .io_init      (dataRx_crc16rx_io_init     ), //i
@@ -2240,7 +2240,7 @@ module UsbDeviceCtrl (
     .ctrlCd_clk   (ctrlCd_clk                 ), //i
     .ctrlCd_reset (ctrlCd_reset               )  //i
   );
-  USBCRC16 dataTx_crc16tx (
+  (* keep_hierarchy = "TRUE" *) USBCRC16 dataTx_crc16tx (
     .io_data      (io_phy_tx_stream_payload_fragment[7:0]), //i
     .io_enable    (dataTx_crc16tx_io_enable              ), //i
     .io_init      (dataTx_crc16tx_io_init                ), //i
@@ -5359,7 +5359,7 @@ module FlowCCByToggle_1 (
   wire                outputArea_flow_valid;
   reg                 outputArea_flow_m2sPipe_valid;
 
-  BufferCC_13 inputArea_target_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_13 inputArea_target_buffercc (
     .io_dataIn                (inputArea_target                    ), //i
     .io_dataOut               (inputArea_target_buffercc_io_dataOut), //o
     .ctrlCd_clk               (ctrlCd_clk                          ), //i
@@ -5409,7 +5409,7 @@ module PulseCCByToggle_1 (
   wire                outArea_target;
   reg                 outArea_target_regNext;
 
-  BufferCC_13 inArea_target_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_13 inArea_target_buffercc (
     .io_dataIn                (inArea_target                    ), //i
     .io_dataOut               (inArea_target_buffercc_io_dataOut), //o
     .ctrlCd_clk               (ctrlCd_clk                       ), //i
@@ -5449,8 +5449,8 @@ module BufferCC_2 (
   input               phyCd_reset
 );
 
-  (* async_reg = "true" *) reg                 buffers_0;
-  (* async_reg = "true" *) reg                 buffers_1;
+  reg                 buffers_0;
+  reg                 buffers_1;
 
   assign io_dataOut = buffers_1;
   always @(posedge phyCd_clk or posedge phyCd_reset) begin
@@ -5489,9 +5489,9 @@ module FlowCCByToggle (
   wire                outputArea_flow_valid;
   wire       [7:0]    outputArea_flow_payload;
   reg                 outputArea_flow_m2sPipe_valid;
-  (* async_reg = "true" *) reg        [7:0]    outputArea_flow_m2sPipe_payload;
+  reg        [7:0]    outputArea_flow_m2sPipe_payload;
 
-  BufferCC_13 inputArea_target_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_13 inputArea_target_buffercc (
     .io_dataIn                (inputArea_target                    ), //i
     .io_dataOut               (inputArea_target_buffercc_io_dataOut), //o
     .ctrlCd_clk               (ctrlCd_clk                          ), //i
@@ -5554,13 +5554,13 @@ module PulseCCByToggle (
   wire                outArea_target;
   reg                 outArea_target_regNext;
 
-  BufferCC_12 bufferCC_17 (
+  (* keep_hierarchy = "TRUE" *) BufferCC_12 bufferCC_17 (
     .io_dataIn   (bufferCC_17_io_dataIn ), //i
     .io_dataOut  (bufferCC_17_io_dataOut), //o
     .ctrlCd_clk  (ctrlCd_clk            ), //i
     .phyCd_reset (phyCd_reset           )  //i
   );
-  BufferCC_13 inArea_target_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_13 inArea_target_buffercc (
     .io_dataIn                (inArea_target                    ), //i
     .io_dataOut               (inArea_target_buffercc_io_dataOut), //o
     .ctrlCd_clk               (ctrlCd_clk                       ), //i
@@ -5630,23 +5630,23 @@ module StreamCCByToggle (
   wire                popArea_stream_m2sPipe_payload_last;
   wire       [7:0]    popArea_stream_m2sPipe_payload_fragment;
   reg                 popArea_stream_rValid;
-  (* async_reg = "true" *) reg                 popArea_stream_rData_last;
-  (* async_reg = "true" *) reg        [7:0]    popArea_stream_rData_fragment;
+  reg                 popArea_stream_rData_last;
+  reg        [7:0]    popArea_stream_rData_fragment;
   wire                when_Stream_l370;
 
-  BufferCC_14 outHitSignal_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_14 outHitSignal_buffercc (
     .io_dataIn    (outHitSignal                    ), //i
     .io_dataOut   (outHitSignal_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                      ), //i
     .ctrlCd_reset (ctrlCd_reset                    )  //i
   );
-  BufferCC_15 bufferCC_17 (
+  (* keep_hierarchy = "TRUE" *) BufferCC_15 bufferCC_17 (
     .io_dataIn    (bufferCC_17_io_dataIn ), //i
     .io_dataOut   (bufferCC_17_io_dataOut), //o
     .phyCd_clk    (phyCd_clk             ), //i
     .ctrlCd_reset (ctrlCd_reset          )  //i
   );
-  BufferCC_16 pushArea_target_buffercc (
+  (* keep_hierarchy = "TRUE" *) BufferCC_16 pushArea_target_buffercc (
     .io_dataIn                 (pushArea_target                    ), //i
     .io_dataOut                (pushArea_target_buffercc_io_dataOut), //o
     .phyCd_clk                 (phyCd_clk                          ), //i
@@ -5915,8 +5915,8 @@ module BufferCC_13 (
   input               phyCd_reset_synchronized
 );
 
-  (* async_reg = "true" *) reg                 buffers_0;
-  (* async_reg = "true" *) reg                 buffers_1;
+  reg                 buffers_0;
+  reg                 buffers_1;
 
   assign io_dataOut = buffers_1;
   always @(posedge ctrlCd_clk or posedge phyCd_reset_synchronized) begin
@@ -5939,8 +5939,8 @@ module BufferCC_12 (
   input               phyCd_reset
 );
 
-  (* async_reg = "true" *) reg                 buffers_0;
-  (* async_reg = "true" *) reg                 buffers_1;
+  reg                 buffers_0;
+  reg                 buffers_1;
 
   assign io_dataOut = buffers_1;
   always @(posedge ctrlCd_clk or posedge phyCd_reset) begin
@@ -5963,8 +5963,8 @@ module BufferCC_16 (
   input               ctrlCd_reset_synchronized
 );
 
-  (* async_reg = "true" *) reg                 buffers_0;
-  (* async_reg = "true" *) reg                 buffers_1;
+  reg                 buffers_0;
+  reg                 buffers_1;
 
   assign io_dataOut = buffers_1;
   always @(posedge phyCd_clk or posedge ctrlCd_reset_synchronized) begin
@@ -5987,8 +5987,8 @@ module BufferCC_15 (
   input               ctrlCd_reset
 );
 
-  (* async_reg = "true" *) reg                 buffers_0;
-  (* async_reg = "true" *) reg                 buffers_1;
+  reg                 buffers_0;
+  reg                 buffers_1;
 
   assign io_dataOut = buffers_1;
   always @(posedge phyCd_clk or posedge ctrlCd_reset) begin
@@ -6011,8 +6011,8 @@ module BufferCC_14 (
   input               ctrlCd_reset
 );
 
-  (* async_reg = "true" *) reg                 buffers_0;
-  (* async_reg = "true" *) reg                 buffers_1;
+  reg                 buffers_0;
+  reg                 buffers_1;
 
   assign io_dataOut = buffers_1;
   always @(posedge ctrlCd_clk or posedge ctrlCd_reset) begin
