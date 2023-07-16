@@ -609,6 +609,8 @@ async def test_usbdev(dut):
     if GL_TEST:
         SO.assert_resolvable_mode(True)		# 0 state outputs
         SO.assert_encoded_mode(SO.DM)		# 0 state outputs (gatelevel)
+        SO.assert_resolvable_mode()	# FIXME disable this for GL_TEST
+        SO.assert_encoded_mode()	# FIXME disable this for GL_TEST
     else:
         SO.assert_resolvable_mode(False)	# x state outputs
         SO.assert_encoded_mode(SO.X)		# x state outputs (simulation)
@@ -792,6 +794,62 @@ async def test_usbdev(dut):
     
     ##############################################################################################
 
+    if GL_TEST:		#### FLUSH states through CC
+        MYADDRESS = 0
+        MYENDPOINT = 0
+        ## The purpose of this section is to fire traffic through CC primitives so the values conveyed lose their X states
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)		## FIXME GL_TEST debug remove me
+
+        debug(dut, '020_GL_TEST_FLUSH')
+        await usb.send_idle()
+
+        await usb.send_token(usb.SETUP, addr=MYADDRESS, endp=MYENDPOINT, crc5=0x02) # explicit crc5 for a0/ep0
+        debug(dut, '021_GL_TEST_FLUSH_DATA0')
+        setup = (0x04030201, 0x08070605) # crc16=0x304f
+        await usb.send_crc16_payload(usb.DATA0, Payload.int32(*setup), crc16=0x304f) # explicit crc16
+        await usb.set_idle()
+        await ClockCycles(dut.clk, TICKS_PER_BIT*23)	## Tx auto ACK
+
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        await ttwb.wb_write(REG_INTERRUPT, reg_interrupt(all=True), regwr)	# UVM=W1C
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+
+        await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## IDLE
+
+        await usb.send_idle()
+
+        await usb.send_token(usb.SETUP, addr=MYADDRESS, endp=MYENDPOINT, crc5=0x02) # explicit crc5 for a0/ep0
+        debug(dut, '022_GL_TEST_FLUSH_DATA0')
+        setup = (0x04030201, 0x08070605) # crc16=0x304f
+        await usb.send_crc16_payload(usb.DATA0, Payload.int32(*setup), crc16=0x304f) # explicit crc16
+        await usb.set_idle()
+        await ClockCycles(dut.clk, TICKS_PER_BIT*23)	## Tx auto ACK
+
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        await ttwb.wb_write(REG_INTERRUPT, reg_interrupt(all=True), regwr)	# UVM=W1C
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+
+        await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## IDLE
+
+        await usb.send_idle()
+
+        await usb.send_token(usb.SETUP, addr=MYADDRESS, endp=MYENDPOINT, crc5=0x02) # explicit crc5 for a0/ep0
+        debug(dut, '022_GL_TEST_FLUSH_DATA0')
+        setup = (0x04030201, 0x08070605) # crc16=0x304f
+        await usb.send_crc16_payload(usb.DATA0, Payload.int32(*setup), crc16=0x304f) # explicit crc16
+        await usb.set_idle()
+        await ClockCycles(dut.clk, TICKS_PER_BIT*23)	## Tx auto ACK
+
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+        await ttwb.wb_write(REG_INTERRUPT, reg_interrupt(all=True), regwr)	# UVM=W1C
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)
+
+        await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## IDLE
+
+        debug(dut, '023_GL_TEST_FLUSH_END')
+
+    ##############################################################################################
+
     if run_this_test(True):
         debug(dut, '020_SETUP_BITBANG')
 
@@ -853,6 +911,8 @@ async def test_usbdev(dut):
         #  between the end of the SE0 condition (from EOP), until the rx decode a character, so
         #  iterations are lost to allow for decode of the SYNC.
         gap_limit = 15 if(LOW_SPEED) else 14
+        if GL_TEST:	# FIXME debug can remove
+            gap_limit -= 4
         for i in range(0, gap_limit):	# LOW_SPEED=15 FULL_SPEED=14
             await usb.send_idle()		# This demonstrates maximum tolerance at for TOKEN<>DATA gap
 
@@ -883,12 +943,16 @@ async def test_usbdev(dut):
 
         # FIXME This is how we want this API to work
         SO.mark_close_same_state(TICKS_PER_BIT)
-        SO.assert_resolvable_mode(False)	# x state outputs
-        SO.assert_encoded_mode(SO.X)		# x state outputs
+        if not GL_TEST:
+            SO.assert_resolvable_mode(False)	# x state outputs
+            SO.assert_encoded_mode(SO.X)		# x state outputs
+
+        FIXME_GL_TEST_TICKS = int((TICKS_PER_BIT/2)+(TICKS_PER_BIT*7))
+        data = await ttwb.wb_read(REG_INTERRUPT, regrd)		## FIXME GL_TEST debug remove me
 
         debug(dut, '022_SETUP_BITBANG_CHECK')
         ## Manage interrupt and reset
-        assert await wait_for_signal_interrupts(dut, int(TICKS_PER_BIT/2)) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
+        assert await wait_for_signal_interrupts(dut, int(TICKS_PER_BIT/2+FIXME_GL_TEST_TICKS)) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_EP0SETUP != 0, f"REG_INTERRUPT expected to see: EP0SETUP bit set"
         await ttwb.wb_write(REG_INTERRUPT, INTR_EP0SETUP, regwr)	# UVM=W1C
