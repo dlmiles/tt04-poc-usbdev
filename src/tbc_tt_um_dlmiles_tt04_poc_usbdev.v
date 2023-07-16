@@ -23,7 +23,7 @@ module tb_usbdev (
         $dumpfile ("tb.vcd");	// Renamed for GHA
 `ifdef GL_TEST
         // the internal state of a flattened verilog is not that interesting
-        $dumpvars (1, tb_usbdev);
+        $dumpvars (0, tb_usbdev);
 `else
         $dumpvars (0, tb_usbdev);
 `endif
