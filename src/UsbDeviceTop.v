@@ -4726,6 +4726,8 @@ module UsbDeviceCtrl (
       regs_pullup <= 1'b0;
       memory_internal_readCmd_regNext_valid <= 1'b0;
       _zz_memory_external_readRsp_valid <= 1'b0;
+      token_pid <= 4'b0000;
+      token_data <= 11'h000;
       dataTx_input_rValid <= 1'b0;
       dataTx_input_halfPipe_rValid <= 1'b0;
       mapping_readState <= 2'b00;
@@ -4917,6 +4919,29 @@ module UsbDeviceCtrl (
       dataRx_stateReg <= dataRx_stateNext;
       dataTx_stateReg <= dataTx_stateNext;
       token_stateReg <= token_stateNext;
+      case(token_stateReg)
+        token_enumDef_PID : begin
+          if(io_phy_rx_flow_valid) begin
+            token_pid <= io_phy_rx_flow_payload[3 : 0];
+          end
+        end
+        token_enumDef_DATA_0 : begin
+          if(io_phy_rx_flow_valid) begin
+            token_data[7 : 0] <= io_phy_rx_flow_payload;
+          end
+        end
+        token_enumDef_DATA_1 : begin
+          if(io_phy_rx_flow_valid) begin
+            token_data[10 : 8] <= io_phy_rx_flow_payload[2 : 0];
+          end
+        end
+        token_enumDef_CHECK : begin
+        end
+        token_enumDef_ERROR : begin
+        end
+        default : begin
+        end
+      endcase
       active_stateReg <= active_stateNext;
       case(active_stateReg)
         active_enumDef_IDLE : begin
@@ -5111,19 +5136,10 @@ module UsbDeviceCtrl (
     end
     case(token_stateReg)
       token_enumDef_PID : begin
-        if(io_phy_rx_flow_valid) begin
-          token_pid <= io_phy_rx_flow_payload[3 : 0];
-        end
       end
       token_enumDef_DATA_0 : begin
-        if(io_phy_rx_flow_valid) begin
-          token_data[7 : 0] <= io_phy_rx_flow_payload;
-        end
       end
       token_enumDef_DATA_1 : begin
-        if(io_phy_rx_flow_valid) begin
-          token_data[10 : 8] <= io_phy_rx_flow_payload[2 : 0];
-        end
       end
       token_enumDef_CHECK : begin
         if(when_UsbTokenRxFsm_l88) begin
