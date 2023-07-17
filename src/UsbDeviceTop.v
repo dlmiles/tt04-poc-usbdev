@@ -676,7 +676,6 @@ module UsbDevicePhyNative (
   wire       [5:0]    _zz_timer_oneCycle;
   wire       [4:0]    _zz_timer_oneCycle_1;
   wire       [6:0]    _zz_when_UsbDevicePhyNative_l288;
-  wire       [9:0]    _zz_rx_packet_errorTimeout_trigger;
   wire       [1:0]    _zz_tickTimer_counter_valueNext;
   wire       [0:0]    _zz_tickTimer_counter_valueNext_1;
   reg                 timer_lowSpeed;
@@ -751,7 +750,7 @@ module UsbDevicePhyNative (
   wire                rx_packet_wantKill;
   reg        [2:0]    rx_packet_counter;
   wire                rx_packet_errorTimeout_lowSpeed;
-  reg        [6:0]    rx_packet_errorTimeout_counter;
+  reg        [9:0]    rx_packet_errorTimeout_counter;
   reg                 rx_packet_errorTimeout_clear;
   wire                rx_packet_errorTimeout_inc;
   wire                rx_packet_errorTimeout_trigger;
@@ -770,18 +769,18 @@ module UsbDevicePhyNative (
   reg                 rx_timerLong_hadThree;
   wire       [1:0]    rx_detect_current;
   reg        [1:0]    rx_detect_previous;
-  wire                when_UsbDevicePhyNative_l423;
-  wire                when_UsbDevicePhyNative_l431;
+  wire                when_UsbDevicePhyNative_l424;
+  wire                when_UsbDevicePhyNative_l432;
   reg                 rx_detect_resumeState;
-  wire                when_UsbDevicePhyNative_l438;
-  wire                when_UsbDevicePhyNative_l438_1;
+  wire                when_UsbDevicePhyNative_l439;
+  wire                when_UsbDevicePhyNative_l439_1;
   wire                rx_detect_isResume;
   reg                 rx_detect_resetState;
-  wire                when_UsbDevicePhyNative_l442;
-  wire                when_UsbDevicePhyNative_l442_1;
-  reg                 rx_detect_suspendState;
   wire                when_UsbDevicePhyNative_l443;
   wire                when_UsbDevicePhyNative_l443_1;
+  reg                 rx_detect_suspendState;
+  wire                when_UsbDevicePhyNative_l444;
+  wire                when_UsbDevicePhyNative_l444_1;
   reg                 rx_detect_isResume_regNext;
   wire                tickTimer_counter_willIncrement;
   wire                tickTimer_counter_willClear;
@@ -796,7 +795,7 @@ module UsbDevicePhyNative (
   reg        [1:0]    rx_packet_stateReg;
   reg        [1:0]    rx_packet_stateNext;
   wire                when_UsbDevicePhyNative_l324;
-  wire                when_UsbDevicePhyNative_l352;
+  wire                when_UsbDevicePhyNative_l353;
   wire                when_StateMachine_l253;
   wire                when_StateMachine_l253_1;
   `ifndef SYNTHESIS
@@ -810,7 +809,6 @@ module UsbDevicePhyNative (
   assign _zz_timer_oneCycle_1 = (timer_lowSpeed ? 5'h1f : 5'h03);
   assign _zz_timer_oneCycle = {1'd0, _zz_timer_oneCycle_1};
   assign _zz_when_UsbDevicePhyNative_l288 = {1'd0, rx_eop_minThreshold};
-  assign _zz_rx_packet_errorTimeout_trigger = {3'd0, rx_packet_errorTimeout_counter};
   assign _zz_tickTimer_counter_valueNext_1 = tickTimer_counter_willIncrement;
   assign _zz_tickTimer_counter_valueNext = {1'd0, _zz_tickTimer_counter_valueNext_1};
   UsbLsFsPhyFilter rx_filter (
@@ -829,6 +827,8 @@ module UsbDevicePhyNative (
   `ifndef SYNTHESIS
     rx_destuffer_counter = {1{$urandom}};
     rx_packet_errorTimeout_counter = {1{$urandom}};
+    rx_packet_errorTimeout_p = $urandom;
+    rx_packet_errorTimeout_n = $urandom;
   `endif
   end
 
@@ -1360,7 +1360,7 @@ module UsbDevicePhyNative (
       rx_packet_enumDef_PACKET : begin
       end
       rx_packet_enumDef_ERRORED : begin
-        if(when_UsbDevicePhyNative_l352) begin
+        if(when_UsbDevicePhyNative_l353) begin
           rx_packet_errorTimeout_clear = 1'b1;
         end
       end
@@ -1374,17 +1374,17 @@ module UsbDevicePhyNative (
 
   assign rx_packet_errorTimeout_inc = 1'b1;
   assign rx_packet_errorTimeout_lowSpeed = io_ctrl_lowSpeed;
-  assign rx_packet_errorTimeout_trigger = (_zz_rx_packet_errorTimeout_trigger == (rx_packet_errorTimeout_lowSpeed ? 10'h27f : 10'h04f));
+  assign rx_packet_errorTimeout_trigger = (rx_packet_errorTimeout_counter == (rx_packet_errorTimeout_lowSpeed ? 10'h27f : 10'h04f));
   always @(*) begin
     rx_timerLong_clear = 1'b0;
-    if(when_UsbDevicePhyNative_l431) begin
+    if(when_UsbDevicePhyNative_l432) begin
       rx_timerLong_clear = 1'b1;
     end
   end
 
   always @(*) begin
     rx_timerLong_inc = 1'b1;
-    if(when_UsbDevicePhyNative_l423) begin
+    if(when_UsbDevicePhyNative_l424) begin
       rx_timerLong_inc = 1'b0;
     end
   end
@@ -1396,15 +1396,15 @@ module UsbDevicePhyNative (
   assign rx_timerLong_threeBit = (rx_timerLong_counter == 21'h00000a);
   assign rx_timerLong_lowSpeed = io_ctrl_lowSpeed;
   assign rx_detect_current = {rx_filter_io_filtered_dm,rx_filter_io_filtered_dp};
-  assign when_UsbDevicePhyNative_l423 = rx_timerLong_counter[20];
-  assign when_UsbDevicePhyNative_l431 = (rx_detect_current != rx_detect_previous);
-  assign when_UsbDevicePhyNative_l438 = ((! rx_se0) && (rx_detect_current != rx_detect_previous));
-  assign when_UsbDevicePhyNative_l438_1 = (rx_timerLong_resume && rx_k);
+  assign when_UsbDevicePhyNative_l424 = rx_timerLong_counter[20];
+  assign when_UsbDevicePhyNative_l432 = (rx_detect_current != rx_detect_previous);
+  assign when_UsbDevicePhyNative_l439 = ((! rx_se0) && (rx_detect_current != rx_detect_previous));
+  assign when_UsbDevicePhyNative_l439_1 = (rx_timerLong_resume && rx_k);
   assign rx_detect_isResume = (((rx_detect_resumeState && rx_timerLong_hadOne) && (! rx_timerLong_hadThree)) && rx_j);
-  assign when_UsbDevicePhyNative_l442 = (rx_timerLong_reset && rx_se0);
-  assign when_UsbDevicePhyNative_l442_1 = (! rx_se0);
-  assign when_UsbDevicePhyNative_l443 = (rx_timerLong_suspend && rx_j);
-  assign when_UsbDevicePhyNative_l443_1 = (! rx_j);
+  assign when_UsbDevicePhyNative_l443 = (rx_timerLong_reset && rx_se0);
+  assign when_UsbDevicePhyNative_l443_1 = (! rx_se0);
+  assign when_UsbDevicePhyNative_l444 = (rx_timerLong_suspend && rx_j);
+  assign when_UsbDevicePhyNative_l444_1 = (! rx_j);
   assign io_ctrl_reset = rx_detect_resetState;
   assign io_ctrl_suspend = rx_detect_suspendState;
   assign io_ctrl_disconnect = 1'b0;
@@ -1518,7 +1518,7 @@ module UsbDevicePhyNative (
   end
 
   assign when_UsbDevicePhyNative_l324 = (rx_packet_counter == 3'b111);
-  assign when_UsbDevicePhyNative_l352 = ((rx_packet_errorTimeout_p != rx_filter_io_filtered_dp) || (rx_packet_errorTimeout_n != rx_filter_io_filtered_dm));
+  assign when_UsbDevicePhyNative_l353 = ((rx_packet_errorTimeout_p != rx_filter_io_filtered_dp) || (rx_packet_errorTimeout_n != rx_filter_io_filtered_dm));
   assign when_StateMachine_l253 = ((! (rx_packet_stateReg == rx_packet_enumDef_IDLE)) && (rx_packet_stateNext == rx_packet_enumDef_IDLE));
   assign when_StateMachine_l253_1 = ((! (rx_packet_stateReg == rx_packet_enumDef_ERRORED)) && (rx_packet_stateNext == rx_packet_enumDef_ERRORED));
   always @(posedge phyCd_clk) begin
@@ -1606,10 +1606,10 @@ module UsbDevicePhyNative (
       _zz_rx_history_value_7 <= _zz_rx_history_value_6;
     end
     if(rx_packet_errorTimeout_inc) begin
-      rx_packet_errorTimeout_counter <= (rx_packet_errorTimeout_counter + 7'h01);
+      rx_packet_errorTimeout_counter <= (rx_packet_errorTimeout_counter + 10'h001);
     end
     if(rx_packet_errorTimeout_clear) begin
-      rx_packet_errorTimeout_counter <= 7'h00;
+      rx_packet_errorTimeout_counter <= 10'h000;
     end
     if(rx_timerLong_inc) begin
       rx_timerLong_counter <= (rx_timerLong_counter + 21'h000001);
@@ -1674,22 +1674,22 @@ module UsbDevicePhyNative (
         rx_timerLong_hadThree <= 1'b0;
       end
       rx_detect_previous <= rx_detect_current;
-      if(when_UsbDevicePhyNative_l438) begin
+      if(when_UsbDevicePhyNative_l439) begin
         rx_detect_resumeState <= 1'b0;
       end
-      if(when_UsbDevicePhyNative_l438_1) begin
+      if(when_UsbDevicePhyNative_l439_1) begin
         rx_detect_resumeState <= 1'b1;
       end
-      if(when_UsbDevicePhyNative_l442) begin
+      if(when_UsbDevicePhyNative_l443) begin
         rx_detect_resetState <= 1'b1;
       end
-      if(when_UsbDevicePhyNative_l442_1) begin
+      if(when_UsbDevicePhyNative_l443_1) begin
         rx_detect_resetState <= 1'b0;
       end
-      if(when_UsbDevicePhyNative_l443) begin
+      if(when_UsbDevicePhyNative_l444) begin
         rx_detect_suspendState <= 1'b1;
       end
-      if(when_UsbDevicePhyNative_l443_1) begin
+      if(when_UsbDevicePhyNative_l444_1) begin
         rx_detect_suspendState <= 1'b0;
       end
       rx_detect_isResume_regNext <= rx_detect_isResume;
