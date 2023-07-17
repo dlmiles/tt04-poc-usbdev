@@ -97,12 +97,45 @@ def report_resolvable(dut, pfx = None, node = None, depth = None, filter = None)
     pass
 
 
+# Convert input value (int|bytes)
+# assert my_bin(0x86, 8, '0') == '10000110'
+def my_bin(value: int, size: int, pad_char = '0') -> str:
+    assert size >= 0 and size <= 8, f"NOTIMPLEMENTED size > 8 at {size}"
+    #print("my_bin(value={:02x}, size={}, pad_char={})".format(value, size, pad_char))
+    if isinstance(value, int):
+        s = bin(value)[2:]	# remove '0b' prefix
+    else:
+        assert False, f"Unexpected type: value={type(value)}"
+    #print(":my_bin() s={}".format(s))
+    while len(s) < size:
+        s = pad_char + s
+        #print(":my_bin() s={} EXTEND".format(s))
+    if len(s) > size:
+        s = s[-size:]
+        #print(":my_bin() s={} TRUNC".format(s))
+    assert len(s) == size
+    return s
+
+
+# assert random_merge_value('0000xxxx0111x00x', '0101010101010101') == '0000010101110001'
+def random_merge_value(value: str, merge: str, merge_char: str = 'x') -> str:
+    assert len(value) == len(merge), f"length mismatch {len(value)} != {len(merge)}"
+    s = ''
+    for i in range(0, len(value)):
+        ch = value[i]
+        if ch == merge_char:
+            ch = merge[i]
+        s += ch
+    print("s={}".format(s))
+    return s
+
+
 def random_binary_value(seed: int, path: str, nbits: int) -> BinaryValue:
     assert isinstance(seed, int)
     assert isinstance(path, str)
     # use digest to generate pseudo random bits ?
     # use seed (binary value) + design hierachy path (string value)
-    # repeat a minimum number of times (4) to ensure input data material is longer than digest length
+    # repeat a minimum number of times (4) to ensure/have-high-chance input data material is longer than digest length
     # shift bits out of digest as necessary
     # if we run out of bits (because the required data is longer than digest bit length,
     #  repeat but use (5) times for input material
@@ -110,16 +143,33 @@ def random_binary_value(seed: int, path: str, nbits: int) -> BinaryValue:
     #   with the input dataset expected and the total number of bits expected
     #   but it looks random for now and is repeatible given same seed/same path
     # maybe we are better not using a raw digest but a similar and more suited RNG generator
+
+    digest = hashlib.sha256()
+    # this is due to the limit bin(int_value) below
+    assert nbits >= 0 and nbits <= digest.digest_size*8, f"NOTIMPLEMENTED nbits out of range 0 to {digest.digest_size*8} at {nbits}"
+
     key = bin(seed) + path
     input = key * 4
     ## Use path and seed to generate value
-    sha1 = hashlib.sha1()
-    sha1.update(input.encode(encoding='UTF-8'))
-    nbytes = int(nbits / 8) + 1
-    binstr = sha1.digest()[-nbytes:]
-    nv = BinaryValue(binstr[-nbits:], n_bits=nbits)	## FIXME crude
-    #print("random_binary_value(seed={}, path={}, nbits={}) = {} {}".format(seed, path, nbits, str(nv), sha1.hexdigest()))
-    return nv
+    digest.update(input.encode(encoding='UTF-8'))
+
+    revdig = bytearray(digest.digest())
+    revdig.reverse()
+    #print("revdig={}".format(bytes(revdig).hex()))
+
+    nstr = ''
+    for i in list(map(bytes, zip(revdig))):
+        if len(nstr) >= nbits:
+            break
+        bb = my_bin(i[0], 8)
+        #print("Bbinstr={} {:02x}".format(bb, i[0]))
+        nstr = "{}".format(bb) + nstr	# prepend
+    #nstr = "{:032b}".format(binstr[-nbits:])
+
+    nstr = nstr[-nbits:]	# truncate
+
+    assert len(nstr) == nbits, f"{len(nstr)} != {nbits} for {nstr}"
+    return nstr
 
 
 def ensure_resolvable_apply(dut, policy, pfx: str, node) -> bool:
@@ -139,18 +189,21 @@ def ensure_resolvable_apply(dut, policy, pfx: str, node) -> bool:
     zstr = "z" * nbits
 
     nv = None
-    if s == xstr:
-        if policy == True:
-            nv = BinaryValue("1" * nbits, n_bits=nbits)
-        elif policy == False:
-            nv = BinaryValue("0" * nbits, n_bits=nbits)
-        else:
-            seed = cocotb.RANDOM_SEED
-            nv = random_binary_value(seed, node._path, nbits)
-    elif s == zstr:
-        pass
+    if s == zstr:
+        pass	# ignore
+    elif policy == True:
+        nstr = s.replace('x', '1')
+        nv = BinaryValue(nstr, n_bits=nbits)	# was: "1" * nbits
+    elif policy == False:
+        nstr = s.replace('x', '0')
+        nv = BinaryValue(nstr, n_bits=nbits)	# was: "0" * nbits
     else:
-        dut._log.warning("POLICY-RESOLVER {}{} = {} (was {})".format(pfx, node._name, nv, node.value))
+        seed = cocotb.RANDOM_SEED
+        nstr = random_binary_value(seed, node._path, nbits)
+        nstr = random_merge_value(s, nstr)
+        nv = BinaryValue(nstr, n_bits=nbits)
+    #else:
+    #    dut._log.warning("POLICY-RESOLVER {}{} = {} (skipped {})".format(pfx, node._name, nv, node.value))
 
     if nv is not None:
         dut._log.info("POLICY-RESOLVER {}{} = {} (was {})".format(pfx, node._name, nv, node.value))

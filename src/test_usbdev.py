@@ -109,7 +109,7 @@ async def send_sequence_in8(dut, seq):
 ###
 ###
 
-# Signals we are not interesting in enumerating at the top of the log
+# Signals we are not interested in when enumerating at the top of the log
 exclude = [
     r'[\./]_',
     r'[\./]FILLER_',
@@ -142,6 +142,45 @@ def exclude_re_path(path: str, name: str):
             #print("EXCLUDED={}".format(path))
             return False
     return True
+
+###
+# Signals not to touch for ensure_resolvable()
+#
+# Signals we are not interested in enumerating to assign X with value
+ensure_exclude = [
+    #r'[\./]_',
+    r'[\./]FILLER_',
+    r'[\./]PHY_',
+    r'[\./]TAP_',
+    r'[\./]VGND',
+    r'[\./]VNB',
+    r'[\./]VPB',
+    r'[\./]VPWR',
+    r'[\./]pwrgood_',
+    r'[\./]ANTENNA_',
+    r'[\./]clkbuf_leaf_',
+    r'[\./]clknet_leaf_',
+    r'[\./]clkbuf_[\d_]+_clk',
+    r'[\./]clknet_[\d_]+_clk',
+    r'[\./]net\d+[\./]',
+    r'[\./]net\d+$',
+    r'[\./]fanout\d+[\./]',
+    r'[\./]fanout\d+$',
+    r'[\./]input\d+[\./]',
+    r'[\./]input\d+$',
+    r'[\./]hold\d+[\./]',
+    r'[\./]hold\d+$'
+]
+ENSURE_EXCLUDE_RE = dict(map(lambda k: (k,re.compile(k)), ensure_exclude))
+
+def ensure_exclude_re_path(path: str, name: str):
+    for v in ENSURE_EXCLUDE_RE.values():
+        if v.search(path):
+            #print("ENSURE_EXCLUDED={}".format(path))
+            return False
+    return True
+
+
 
 # This is used as detection of gatelevel testing, with a flattened HDL,
 #  we can only inspect the external module signals and disable internal signal inspection.
@@ -395,11 +434,11 @@ async def test_usbdev(dut):
     if GL_TEST and 'RANDOM_POLICY' in os.environ:
         await ClockCycles(dut.clk, 1)		## crank it one tick, should assign some non X states
         if os.environ['RANDOM_POLICY'] == 'zero' or os.environ['RANDOM_POLICY'].lower() == 'false':
-            ensure_resolvable(dut, policy=False, filter=exclude_re_path)
+            ensure_resolvable(dut, policy=False, filter=ensure_exclude_re_path)
         elif os.environ['RANDOM_POLICY'] == 'one' or os.environ['RANDOM_POLICY'].lower() == 'true':
-            ensure_resolvable(dut, policy=True, filter=exclude_re_path)
+            ensure_resolvable(dut, policy=True, filter=ensure_exclude_re_path)
         else: # if os.environ['RANDOM_POLICY'] == 'random':
-            ensure_resolvable(dut, policy='random', filter=exclude_re_path)
+            ensure_resolvable(dut, policy='random', filter=ensure_exclude_re_path)
 
     await ClockCycles(dut.clk, 1)
     dut.ui_in.value = 0
