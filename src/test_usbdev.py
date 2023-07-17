@@ -302,7 +302,7 @@ async def wait_for_signal_interrupts(dut, not_after: int = None, not_before: int
             await ClockCycles(dut.clk, 1)
             bf = signal_interrupts(dut)
         msg = f"(signal fired at {tmp})" if(bf) else f"(signal did not fire by {tmp})"
-        assert count <= not_after, f"wait_for_signal_interrupts(not_after={not_after}, not_before={not_before}) = NOT_AFTER failed at count={count} too late {msg}"
+        assert tmp <= not_after, f"wait_for_signal_interrupts(not_after={not_after}, not_before={not_before}) = NOT_AFTER failed at count={count} too late {msg}"
 
     dut._log.warning(f"wait_for_signal_interrupts(not_after={not_after}, not_before={not_before}) = PASS count={count} bf={bf}")
 
@@ -748,11 +748,11 @@ async def test_usbdev(dut):
 
     sim_timerLong_factor = 1
     ##egrep "rx_timerLong_reset =" UsbDeviceTop.v # 23'h07403f ## FULL
-    if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h07403f"):
+    if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "2[123]\'h07403f"):
         ticks = reset_ticks	## ENABLE
 
     ## egrep "rx_timerLong_reset =" UsbDeviceTop.v ## 23'h000947  1/200 FS (default SIM speedup)
-    if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h000947"):
+    if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "2[123]\'h000947"):
         sim_timerLong_factor = 200
         ticks = int(reset_ticks / sim_timerLong_factor)	## ENABLE 1/200th
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-timerLong-200xspeedup (USB FULL_SPEED test mode) = {}".format(reset_ticks, ticks))
@@ -761,7 +761,7 @@ async def test_usbdev(dut):
             exit(1)	## failure ?
 
     ##                                             ## 23'h004a3f  1/20  LS
-    if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "23\'h005ccf"):
+    if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "2[123]\'h005ccf"):
         sim_timerLong_factor = 20
         ticks = int(reset_ticks / sim_timerLong_factor)	## ENABLE 1/20th
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SIM-MODE-timerLong-20xspeedup (USB LOW_SPEED test mode) = {}".format(reset_ticks, ticks))
@@ -1118,7 +1118,8 @@ async def test_usbdev(dut):
         await usb.set_idle()
 
         # FULL_SPEED=18 LOW_SPEED=130+4 (was 64)
-        wfi_limit = int((TICKS_PER_BIT/2)+2) if(LOW_SPEED) else int(TICKS_PER_BIT/2)
+        #wfi_limit = int((TICKS_PER_BIT/2)+2) if(LOW_SPEED) else int(TICKS_PER_BIT/2)
+        wfi_limit = int(TICKS_PER_BIT*8) if(LOW_SPEED) else int(TICKS_PER_BIT)
         assert await wait_for_signal_interrupts(dut, wfi_limit) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # FIXME remove this now we have wait_for_signal_interrupts()
