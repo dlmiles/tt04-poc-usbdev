@@ -124,7 +124,7 @@ jobs:
     - name: test FULL_SPEED
       run: |
         pwd
-        rm runs/wokwi/results/final/verilog/gl/*.nl.v
+        rm -f runs/wokwi/results/final/verilog/gl/*.nl.v
         cp runs/wokwi/results/final/verilog/gl/*.v src/gate_level_netlist.v
         cd src
 
@@ -143,7 +143,7 @@ jobs:
     - name: test LOW_SPEED
       run: |
         pwd
-        rm runs/wokwi/results/final/verilog/gl/*.nl.v
+        rm -f runs/wokwi/results/final/verilog/gl/*.nl.v
         cp runs/wokwi/results/final/verilog/gl/*.v src/gate_level_netlist.v
         cd src
 
@@ -250,7 +250,7 @@ jobs:
     - name: test FULL_SPEED
       run: |
         pwd
-        rm runs/wokwi/results/final/verilog/gl/*.nl.v
+        rm -f runs/wokwi/results/final/verilog/gl/*.nl.v
         cp runs/wokwi/results/final/verilog/gl/*.v src/gate_level_netlist.v
         cd src
 
@@ -269,7 +269,7 @@ jobs:
     - name: test LOW_SPEED
       run: |
         pwd
-        rm runs/wokwi/results/final/verilog/gl/*.nl.v
+        rm -f runs/wokwi/results/final/verilog/gl/*.nl.v
         cp runs/wokwi/results/final/verilog/gl/*.v src/gate_level_netlist.v
         cd src
 
@@ -376,7 +376,7 @@ jobs:
     - name: test FULL_SPEED
       run: |
         pwd
-        rm runs/wokwi/results/final/verilog/gl/*.nl.v
+        rm -f runs/wokwi/results/final/verilog/gl/*.nl.v
         cp runs/wokwi/results/final/verilog/gl/*.v src/gate_level_netlist.v
         cd src
 
@@ -395,7 +395,7 @@ jobs:
     - name: test LOW_SPEED
       run: |
         pwd
-        rm runs/wokwi/results/final/verilog/gl/*.nl.v
+        rm -f runs/wokwi/results/final/verilog/gl/*.nl.v
         cp runs/wokwi/results/final/verilog/gl/*.v src/gate_level_netlist.v
         cd src
 
