@@ -76,21 +76,21 @@ then
 	fi
 
 	# FS
-	sed -e "s#rx_timerLong_counter == 23'h0012a7#rx_timerLong_counter == 23'h${target__resume}#" -i UsbDeviceTop.v
-	sed -e "s#rx_timerLong_counter == 23'h000947#rx_timerLong_counter == 23'h${target___reset}#" -i UsbDeviceTop.v
-	sed -e "s#rx_timerLong_counter == 23'h0002b7#rx_timerLong_counter == 23'h${target_suspend}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == \(2[13]\)'h0012a7#rx_timerLong_counter == \1'h${target__resume}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == \(2[13]\)'h000947#rx_timerLong_counter == \1'h${target___reset}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == \(2[13]\)'h0002b7#rx_timerLong_counter == \1'h${target_suspend}#" -i UsbDeviceTop.v
 	# LS 1/20 (current)
-	sed -e "s#rx_timerLong_counter == 23'h00ba8f#rx_timerLong_counter == 23'h${target__resume}#" -i UsbDeviceTop.v
-	sed -e "s#rx_timerLong_counter == 23'h005ccf#rx_timerLong_counter == 23'h${target___reset}#" -i UsbDeviceTop.v
-	sed -e "s#rx_timerLong_counter == 23'h001b2f#rx_timerLong_counter == 23'h${target_suspend}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == \(2[13]\)'h00ba8f#rx_timerLong_counter == \1'h${target__resume}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == \(2[13]\)'h005ccf#rx_timerLong_counter == \1'h${target___reset}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == \(2[13]\)'h001b2f#rx_timerLong_counter == \1'h${target_suspend}#" -i UsbDeviceTop.v
 	# LS 1/25 (old)
-	sed -e "s#rx_timerLong_counter == 23'h00953f#rx_timerLong_counter == 23'h${target__resume}#" -i UsbDeviceTop.v
-	sed -e "s#rx_timerLong_counter == 23'h004a3f#rx_timerLong_counter == 23'h${target___reset}#" -i UsbDeviceTop.v
-	sed -e "s#rx_timerLong_counter == 23'h0015bf#rx_timerLong_counter == 23'h${target_suspend}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == \(2[13]\)'h00953f#rx_timerLong_counter == \1'h${target__resume}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == \(2[13]\)'h004a3f#rx_timerLong_counter == \1'h${target___reset}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == \(2[13]\)'h0015bf#rx_timerLong_counter == \1'h${target_suspend}#" -i UsbDeviceTop.v
 	# PRODUCTION 48MHz
-	sed -e "s#rx_timerLong_counter == 23'h0e933f#rx_timerLong_counter == 23'h${target__resume}#" -i UsbDeviceTop.v
-	sed -e "s#rx_timerLong_counter == 23'h07403f#rx_timerLong_counter == 23'h${target___reset}#" -i UsbDeviceTop.v
-	sed -e "s#rx_timerLong_counter == 23'h021fbf#rx_timerLong_counter == 23'h${target_suspend}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == \(2[13]\)'h0e933f#rx_timerLong_counter == \1'h${target__resume}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == \(2[13]\)'h07403f#rx_timerLong_counter == \1'h${target___reset}#" -i UsbDeviceTop.v
+	sed -e "s#rx_timerLong_counter == \(2[13]\)'h021fbf#rx_timerLong_counter == \1'h${target_suspend}#" -i UsbDeviceTop.v
 
 	diff -u UsbDeviceTop.v.gds_orig UsbDeviceTop.v || true
 fi
