@@ -774,18 +774,18 @@ module UsbDevicePhyNative (
   reg                 rx_timerLong_hadThree;
   wire       [1:0]    rx_detect_current;
   reg        [1:0]    rx_detect_previous;
-  wire                when_UsbDevicePhyNative_l393;
-  wire                when_UsbDevicePhyNative_l401;
+  wire                when_UsbDevicePhyNative_l414;
+  wire                when_UsbDevicePhyNative_l422;
   reg                 rx_detect_resumeState;
-  wire                when_UsbDevicePhyNative_l408;
-  wire                when_UsbDevicePhyNative_l408_1;
+  wire                when_UsbDevicePhyNative_l429;
+  wire                when_UsbDevicePhyNative_l429_1;
   wire                rx_detect_isResume;
   reg                 rx_detect_resetState;
-  wire                when_UsbDevicePhyNative_l412;
-  wire                when_UsbDevicePhyNative_l412_1;
+  wire                when_UsbDevicePhyNative_l433;
+  wire                when_UsbDevicePhyNative_l433_1;
   reg                 rx_detect_suspendState;
-  wire                when_UsbDevicePhyNative_l413;
-  wire                when_UsbDevicePhyNative_l413_1;
+  wire                when_UsbDevicePhyNative_l434;
+  wire                when_UsbDevicePhyNative_l434_1;
   reg                 rx_detect_isResume_regNext;
   wire                tickTimer_counter_willIncrement;
   wire                tickTimer_counter_willClear;
@@ -1384,14 +1384,14 @@ module UsbDevicePhyNative (
   assign rx_packet_errorTimeout_trigger = (_zz_rx_packet_errorTimeout_trigger == (rx_packet_errorTimeout_lowSpeed ? 10'h27f : 10'h04f));
   always @(*) begin
     rx_timerLong_clear = 1'b0;
-    if(when_UsbDevicePhyNative_l401) begin
+    if(when_UsbDevicePhyNative_l422) begin
       rx_timerLong_clear = 1'b1;
     end
   end
 
   always @(*) begin
     rx_timerLong_inc = 1'b1;
-    if(when_UsbDevicePhyNative_l393) begin
+    if(when_UsbDevicePhyNative_l414) begin
       rx_timerLong_inc = 1'b0;
     end
   end
@@ -1403,15 +1403,15 @@ module UsbDevicePhyNative (
   assign rx_timerLong_threeBit = (rx_timerLong_counter == 23'h00000a);
   assign rx_timerLong_lowSpeed = io_ctrl_lowSpeed;
   assign rx_detect_current = {rx_filter_io_filtered_dm,rx_filter_io_filtered_dp};
-  assign when_UsbDevicePhyNative_l393 = rx_timerLong_counter[22];
-  assign when_UsbDevicePhyNative_l401 = (rx_detect_current != rx_detect_previous);
-  assign when_UsbDevicePhyNative_l408 = ((! rx_se0) && (rx_detect_current != rx_detect_previous));
-  assign when_UsbDevicePhyNative_l408_1 = (rx_timerLong_resume && rx_k);
+  assign when_UsbDevicePhyNative_l414 = rx_timerLong_counter[22];
+  assign when_UsbDevicePhyNative_l422 = (rx_detect_current != rx_detect_previous);
+  assign when_UsbDevicePhyNative_l429 = ((! rx_se0) && (rx_detect_current != rx_detect_previous));
+  assign when_UsbDevicePhyNative_l429_1 = (rx_timerLong_resume && rx_k);
   assign rx_detect_isResume = (((rx_detect_resumeState && rx_timerLong_hadOne) && (! rx_timerLong_hadThree)) && rx_j);
-  assign when_UsbDevicePhyNative_l412 = (rx_timerLong_reset && rx_se0);
-  assign when_UsbDevicePhyNative_l412_1 = (! rx_se0);
-  assign when_UsbDevicePhyNative_l413 = (rx_timerLong_suspend && rx_j);
-  assign when_UsbDevicePhyNative_l413_1 = (! rx_j);
+  assign when_UsbDevicePhyNative_l433 = (rx_timerLong_reset && rx_se0);
+  assign when_UsbDevicePhyNative_l433_1 = (! rx_se0);
+  assign when_UsbDevicePhyNative_l434 = (rx_timerLong_suspend && rx_j);
+  assign when_UsbDevicePhyNative_l434_1 = (! rx_j);
   assign io_ctrl_reset = rx_detect_resetState;
   assign io_ctrl_suspend = rx_detect_suspendState;
   assign io_ctrl_disconnect = 1'b0;
@@ -1528,101 +1528,19 @@ module UsbDevicePhyNative (
   assign when_UsbDevicePhyNative_l349 = ((rx_packet_errorTimeout_p != rx_filter_io_filtered_dp) || (rx_packet_errorTimeout_n != rx_filter_io_filtered_dm));
   assign when_StateMachine_l253 = ((! (rx_packet_stateReg == rx_packet_enumDef_IDLE)) && (rx_packet_stateNext == rx_packet_enumDef_IDLE));
   assign when_StateMachine_l253_1 = ((! (rx_packet_stateReg == rx_packet_enumDef_ERRORED)) && (rx_packet_stateNext == rx_packet_enumDef_ERRORED));
-  always @(posedge phyCd_clk or posedge phyCd_reset) begin
-    if(phyCd_reset) begin
-      timer_counter <= 7'h00;
-      rxToTxDelay_active <= 1'b0;
-      rxToTxDelay_counter <= 6'h00;
-      rx_eop_counter <= 7'h00;
-      rx_packet_errorTimeout_counter <= 9'h000;
-      rx_timerLong_hadOne <= 1'b0;
-      rx_timerLong_hadThree <= 1'b0;
-      rx_timerLong_counter <= 23'h000000;
-      rx_detect_previous <= 2'b11;
-      rx_detect_resumeState <= 1'b0;
-      rx_detect_resetState <= 1'b0;
-      rx_detect_suspendState <= 1'b0;
-      rx_detect_isResume_regNext <= 1'b0;
-      tickTimer_counter_value <= 2'b00;
-      tx_frame_stateReg <= tx_frame_enumDef_BOOT;
-      rx_packet_stateReg <= rx_packet_enumDef_BOOT;
-    end else begin
-      if(timer_inc) begin
-        timer_counter <= (timer_counter + 7'h01);
-      end
-      if(timer_clear) begin
-        timer_counter <= 7'h00;
-      end
-      if(rxToTxDelay_inc) begin
-        rxToTxDelay_counter <= (rxToTxDelay_counter + 6'h01);
-      end
-      if(rxToTxDelay_clear) begin
-        rxToTxDelay_counter <= 6'h00;
-      end
-      if(rxToTxDelay_twoCycle) begin
-        rxToTxDelay_active <= 1'b0;
-      end
-      if(rx_se0) begin
-        if(when_UsbDevicePhyNative_l279) begin
-          rx_eop_counter <= (rx_eop_counter + 7'h01);
-        end
-      end else begin
-        rx_eop_counter <= 7'h00;
-      end
-      if(rx_packet_errorTimeout_inc) begin
-        rx_packet_errorTimeout_counter <= (rx_packet_errorTimeout_counter + 9'h001);
-      end
-      if(rx_packet_errorTimeout_clear) begin
-        rx_packet_errorTimeout_counter <= 9'h000;
-      end
-      if(rx_timerLong_inc) begin
-        rx_timerLong_counter <= (rx_timerLong_counter + 23'h000001);
-      end
-      if(rx_timerLong_clear) begin
-        rx_timerLong_counter <= 23'h000000;
-      end
-      if(rx_timerLong_oneBit) begin
-        rx_timerLong_hadOne <= 1'b1;
-      end
-      if(rx_timerLong_clear) begin
-        rx_timerLong_hadOne <= 1'b0;
-      end
-      if(rx_timerLong_threeBit) begin
-        rx_timerLong_hadThree <= 1'b1;
-      end
-      if(rx_timerLong_clear) begin
-        rx_timerLong_hadThree <= 1'b0;
-      end
-      rx_detect_previous <= rx_detect_current;
-      if(when_UsbDevicePhyNative_l408) begin
-        rx_detect_resumeState <= 1'b0;
-      end
-      if(when_UsbDevicePhyNative_l408_1) begin
-        rx_detect_resumeState <= 1'b1;
-      end
-      if(when_UsbDevicePhyNative_l412) begin
-        rx_detect_resetState <= 1'b1;
-      end
-      if(when_UsbDevicePhyNative_l412_1) begin
-        rx_detect_resetState <= 1'b0;
-      end
-      if(when_UsbDevicePhyNative_l413) begin
-        rx_detect_suspendState <= 1'b1;
-      end
-      if(when_UsbDevicePhyNative_l413_1) begin
-        rx_detect_suspendState <= 1'b0;
-      end
-      rx_detect_isResume_regNext <= rx_detect_isResume;
-      tickTimer_counter_value <= tickTimer_counter_valueNext;
-      tx_frame_stateReg <= tx_frame_stateNext;
-      rx_packet_stateReg <= rx_packet_stateNext;
-      if(rx_eop_hit) begin
-        rxToTxDelay_active <= 1'b1;
-      end
-    end
-  end
-
   always @(posedge phyCd_clk) begin
+    if(timer_inc) begin
+      timer_counter <= (timer_counter + 7'h01);
+    end
+    if(timer_clear) begin
+      timer_counter <= 7'h00;
+    end
+    if(rxToTxDelay_inc) begin
+      rxToTxDelay_counter <= (rxToTxDelay_counter + 6'h01);
+    end
+    if(rxToTxDelay_clear) begin
+      rxToTxDelay_counter <= 6'h00;
+    end
     if(tx_encoder_input_valid) begin
       if(tx_encoder_input_data) begin
         if(timer_oneCycle) begin
@@ -1694,6 +1612,12 @@ module UsbDevicePhyNative (
     if(rx_history_updated) begin
       _zz_rx_history_value_7 <= _zz_rx_history_value_6;
     end
+    if(rx_packet_errorTimeout_inc) begin
+      rx_packet_errorTimeout_counter <= (rx_packet_errorTimeout_counter + 9'h001);
+    end
+    if(rx_packet_errorTimeout_clear) begin
+      rx_packet_errorTimeout_counter <= 9'h000;
+    end
     case(rx_packet_stateReg)
       rx_packet_enumDef_IDLE : begin
         rx_packet_counter <= 3'b000;
@@ -1711,6 +1635,79 @@ module UsbDevicePhyNative (
       default : begin
       end
     endcase
+  end
+
+  always @(posedge phyCd_clk or posedge phyCd_reset) begin
+    if(phyCd_reset) begin
+      rxToTxDelay_active <= 1'b0;
+      rx_eop_counter <= 7'h00;
+      rx_timerLong_hadOne <= 1'b0;
+      rx_timerLong_hadThree <= 1'b0;
+      rx_timerLong_counter <= 23'h000000;
+      rx_detect_previous <= 2'b11;
+      rx_detect_resumeState <= 1'b0;
+      rx_detect_resetState <= 1'b0;
+      rx_detect_suspendState <= 1'b0;
+      rx_detect_isResume_regNext <= 1'b0;
+      tickTimer_counter_value <= 2'b00;
+      tx_frame_stateReg <= tx_frame_enumDef_BOOT;
+      rx_packet_stateReg <= rx_packet_enumDef_BOOT;
+    end else begin
+      if(rxToTxDelay_twoCycle) begin
+        rxToTxDelay_active <= 1'b0;
+      end
+      if(rx_se0) begin
+        if(when_UsbDevicePhyNative_l279) begin
+          rx_eop_counter <= (rx_eop_counter + 7'h01);
+        end
+      end else begin
+        rx_eop_counter <= 7'h00;
+      end
+      if(rx_timerLong_inc) begin
+        rx_timerLong_counter <= (rx_timerLong_counter + 23'h000001);
+      end
+      if(rx_timerLong_clear) begin
+        rx_timerLong_counter <= 23'h000000;
+      end
+      if(rx_timerLong_oneBit) begin
+        rx_timerLong_hadOne <= 1'b1;
+      end
+      if(rx_timerLong_clear) begin
+        rx_timerLong_hadOne <= 1'b0;
+      end
+      if(rx_timerLong_threeBit) begin
+        rx_timerLong_hadThree <= 1'b1;
+      end
+      if(rx_timerLong_clear) begin
+        rx_timerLong_hadThree <= 1'b0;
+      end
+      rx_detect_previous <= rx_detect_current;
+      if(when_UsbDevicePhyNative_l429) begin
+        rx_detect_resumeState <= 1'b0;
+      end
+      if(when_UsbDevicePhyNative_l429_1) begin
+        rx_detect_resumeState <= 1'b1;
+      end
+      if(when_UsbDevicePhyNative_l433) begin
+        rx_detect_resetState <= 1'b1;
+      end
+      if(when_UsbDevicePhyNative_l433_1) begin
+        rx_detect_resetState <= 1'b0;
+      end
+      if(when_UsbDevicePhyNative_l434) begin
+        rx_detect_suspendState <= 1'b1;
+      end
+      if(when_UsbDevicePhyNative_l434_1) begin
+        rx_detect_suspendState <= 1'b0;
+      end
+      rx_detect_isResume_regNext <= rx_detect_isResume;
+      tickTimer_counter_value <= tickTimer_counter_valueNext;
+      tx_frame_stateReg <= tx_frame_stateNext;
+      rx_packet_stateReg <= rx_packet_stateNext;
+      if(rx_eop_hit) begin
+        rxToTxDelay_active <= 1'b1;
+      end
+    end
   end
 
 
