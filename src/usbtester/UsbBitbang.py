@@ -306,13 +306,16 @@ class UsbBitbang():
             desc = ""
         return "{}[0x{:02x}]".format(desc, value)
 
-    async def send_pid(self, pid: int = None, token: int = None) -> None:
+    # validate is to let us generate invalid data
+    async def send_pid(self, pid: int = None, token: int = None, allow_invalid: bool = False) -> None:
         if pid is None:
-            self.validate_token(token)
+            if not allow_invalid:
+                self.validate_token(token)
             pid = ((~token << 4) & 0xf0) | token
             #print("send_pid(token=0x{:x}) computed PID = 0x{:02x} d{} from token".format(token, pid, pid))
 
-        self.validate_pid(pid)
+        if not allow_invalid:
+            self.validate_pid(pid)
         await self.send_data(pid, 8, "PID={} 0x{:x} d{}".format(self.token_to_string(pid), pid, pid))
 
         # Should be equivalent to

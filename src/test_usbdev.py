@@ -37,6 +37,7 @@ from usbtester.SignalOutput import *
 
 
 from test_tt2wb import test_tt2wb_raw, test_tt2wb_cooked
+from test_bitbang import test_bitbang_token, test_bitbang_packet
 
 
 DATAPLUS_BITID		= 0	# bidi: uio_out & uio_in
@@ -899,59 +900,14 @@ async def test_usbdev(dut):
     ##############################################################################################
 
     if run_this_test(True):
-        debug(dut, '020_SETUP_BITBANG')
+        debug(dut, '120_SETUP_BITBANG')
 
         await usb.send_idle()
 
         if not GL_TEST:           ## Check FSM(main) state goes to ACTIVE
             assert fsm_state_expected(dut, 'main', 'ACTIVE')
 
-        # SYNC sequence 8'b00000001  KJKJKJKK
-        # FIXME check we can hold a random number of J-IDLE states here
-        await usb.send_0()	# LSB0
-        await usb.send_0()
-        await usb.send_0()
-        await usb.send_0()
-        await usb.send_0()
-        await usb.send_0()
-        await usb.send_0()
-        await usb.send_1()	# MSB7
-
-        # TOKEN=SETUP  PID=0010b 1101b
-        await usb.send_1()  # LSB0
-        await usb.send_0()
-        await usb.send_1()
-        await usb.send_1()
-        await usb.send_0()
-        await usb.send_1()
-        await usb.send_0()
-        await usb.send_0()  # MSB7
-
-        # Sending ADDR=0000001b is ignored after RESET, maybe can setup REG_ADDRESS(addr=1,enable=true)
-        # ADDR=0000000b
-        await usb.send_0()  # LSB0
-        await usb.send_0()
-        await usb.send_0()
-        await usb.send_0()
-        await usb.send_0()
-        await usb.send_0()
-        await usb.send_0()  # MSB6
-
-        # ENDP=0000b
-        await usb.send_0()  # LSB0
-        await usb.send_0()
-        await usb.send_0()
-        await usb.send_0()  # MSB3
-
-        # CRC5=11101b 0x1d (a=0x01, e=0x0)
-        # CRC5=00010b 0x02 (a=0x00, e=0x0)
-        await usb.send_0()  # LSB0
-        await usb.send_1()
-        await usb.send_0()
-        await usb.send_0()
-        await usb.send_0()  # MSB4
-
-        await usb.send_eop()	# EOP - SE0 SE0 J
+        await test_bitbang_token(dut, usb, token=usb.SETUP)
 
         # When the hardware does this we insert 2 bit times here (if we should be sending now)
         # But accept a tolerance of upto 24 bit times for the rx to become active
@@ -964,29 +920,19 @@ async def test_usbdev(dut):
         for i in range(0, gap_limit):	# LOW_SPEED=15 FULL_SPEED=14
             await usb.send_idle()		# This demonstrates maximum tolerance at for TOKEN<>DATA gap
 
-
-        await usb.send_sync()    # SYNC 8'b00000001 0x80 KJKJKJKK
-
         # DATA0 PID=8'b1100_0011 0xc3
-        await usb.send_pid(pid=0xc3)
-
         setup = (0x04030201, 0x08070605, 0x304f)
         #setup = (0x00000000, 0x00000000, 0xf4bf)
         #setup = (0xffffffff, 0xffffffff, 0x70fe)
-        await usb.send_data(setup[0], 32)	# DATA[0..3]
-        await usb.send_data(setup[1])		# DATA[4..7]
+        await test_bitbang_packet(dut, usb, pid=0xc3, payload=setup[0:len(setup)-1], crc16=setup[-1])
 
-        await usb.send_data(setup[-1], 16, "CRC16")	# CRC16
-
-        await usb.send_eop()	# EOP - SE0 SE0 J
-        await usb.set_idle()
 
         SO.assert_resolvable_mode()		# disable checking
         SO.assert_encoded_mode()		# disable checking
         # FIXME This is how we want this API to work
         SO.mark_open_at_transition(f"021_SETUP_BITBANG_TX_ACK", -1)
 
-        debug(dut, '021_SETUP_BITBANG_TX_ACK')
+        debug(dut, '121_SETUP_BITBANG_TX_ACK')
         await ClockCycles(dut.clk, TICKS_PER_BIT*23)	# FIXME wait for auto ACK
 
         # FIXME This is how we want this API to work
@@ -998,7 +944,7 @@ async def test_usbdev(dut):
         FIXME_GL_TEST_TICKS = int((TICKS_PER_BIT/2)+(TICKS_PER_BIT*7))
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)		## FIXME GL_TEST debug remove me
 
-        debug(dut, '022_SETUP_BITBANG_CHECK')
+        debug(dut, '122_SETUP_BITBANG_CHECK')
         ## Manage interrupt and reset
         assert await wait_for_signal_interrupts(dut, int(TICKS_PER_BIT/2+FIXME_GL_TEST_TICKS)) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
@@ -1056,11 +1002,134 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_INFO, 4)
 
 
-        debug(dut, '020_SETUP_BITBANG_END')
+        debug(dut, '123_SETUP_BITBANG_END')
         await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
 
 
     SO.unregister()
+
+
+    ##############################################################################################
+
+    if run_this_test(True):
+        debug(dut, '130_ERROR_BB_TOKEN')
+
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+
+        await test_bitbang_token(dut, usb, token=usb.SETUP, invalid_token=True)
+        setup = (0x04030201, 0x08070605, 0x304f)
+        await test_bitbang_packet(dut, usb, pid=0xc3, payload=setup[0:len(setup)-1], crc16=setup[-1])
+
+        debug(dut, '131_ERROR_BB_TOKEN_WAIT')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to WFI
+
+        debug(dut, '132_ERROR_BB_TOKEN_CHECK')
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+
+        debug(dut, '133_ERROR_BB_TOKEN_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
+
+    ##############################################################################################
+
+    if run_this_test(True):
+        debug(dut, '140_ERROR_BB_CRC5')
+
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+
+        await test_bitbang_token(dut, usb, token=usb.SETUP, invalid_crc5=True)
+        setup = (0x04030201, 0x08070605, 0x304f)
+        await test_bitbang_packet(dut, usb, pid=0xc3, payload=setup[0:len(setup)-1], crc16=setup[-1])
+
+        debug(dut, '141_ERROR_BB_CRC5_WAIT')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to WFI
+
+        debug(dut, '142_ERROR_BB_CRC5_CHECK')
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+
+        debug(dut, '143_ERROR_BB_CRC5_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
+
+    ##############################################################################################
+
+    if run_this_test(True):
+        debug(dut, '150_ERROR_BB_PID')
+
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+
+        await test_bitbang_token(dut, usb, token=usb.SETUP)
+        setup = (0x04030201, 0x08070605, 0x304f)
+        await test_bitbang_packet(dut, usb, pid=0xc3, payload=setup[0:len(setup)-1], crc16=setup[-1], invalid_pid=True)
+
+        debug(dut, '151_ERROR_BB_PID_WAIT')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to WFI
+
+        debug(dut, '152_ERROR_BB_PID_CHECK')
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+
+        debug(dut, '153_ERROR_BB_PID_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
+
+    ##############################################################################################
+
+    if run_this_test(True):
+        debug(dut, '160_ERROR_BB_PAYLOAD')
+
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+
+        await test_bitbang_token(dut, usb, token=usb.SETUP)
+        setup = (0x04030201, 0x08070605, 0x304f)
+        await test_bitbang_packet(dut, usb, pid=0xc3, payload=setup[0:len(setup)-1], crc16=setup[-1], invalid_payload=True)
+
+        debug(dut, '161_ERROR_BB_PAYLOAD_WAIT')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to WFI
+
+        debug(dut, '162_ERROR_BB_PAYLOAD_CHECK')
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+
+        debug(dut, '163_ERROR_BB_PAYLOAD_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
+
+    ##############################################################################################
+
+    if run_this_test(True):
+        debug(dut, '170_ERROR_BB_CRC16')
+
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+
+        await test_bitbang_token(dut, usb, token=usb.SETUP)
+        setup = (0x04030201, 0x08070605, 0x304f)
+        await test_bitbang_packet(dut, usb, pid=0xc3, payload=setup[0:len(setup)-1], crc16=setup[-1], invalid_crc16=True)
+
+        debug(dut, '171_ERROR_BB_CRC16_WAIT')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to WFI
+
+        debug(dut, '172_ERROR_BB_CRC16_CHECK')
+        assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
+        data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
+        assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
+
+        debug(dut, '173_ERROR_BB_CRC16_END')
+        await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
+
+    ##############################################################################################
 
 
     # FIXME check state machine for error (move these tests noise/corruption tests to another suite)
@@ -1099,7 +1168,7 @@ async def test_usbdev(dut):
     ####
 
     if run_this_test(True):
-        debug(dut, '050_SETUP_TOKEN')
+        debug(dut, '250_SETUP_TOKEN')
 
         # mimic a 12byte IN payload delivered over 2 packets
         # setup device to respond to IN for addr=0x000 endp=0x0 with 8 bytes of payload
@@ -1112,7 +1181,7 @@ async def test_usbdev(dut):
         await driver.unhalt(endp=ENDPOINT)
 
         await usb.send_token(usb.SETUP, addr=ADDRESS, endp=ENDPOINT, crc5=0x02) # explicit crc5 for a0/ep0
-        debug(dut, '051_SETUP_DATA0')
+        debug(dut, '251_SETUP_DATA0')
         setup = (0x04030201, 0x08070605) # crc16=0x304f
         await usb.send_crc16_payload(usb.DATA0, Payload.int32(*setup), crc16=0x304f) # explicit crc16
         await usb.set_idle()
@@ -1143,7 +1212,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(REG_SETUP1, regdesc)
         assert data == setup[1], f"SETUP1 expected to see: SETUP payload+4 0x{setup[1]:08x} is 0x{data:08x}"
 
-        debug(dut, '052_SETUP_ACK')
+        debug(dut, '252_SETUP_ACK')
 
         SO.assert_resolvable_mode()		# disable checking
         SO.assert_encoded_mode()		# disable checking
@@ -1151,7 +1220,7 @@ async def test_usbdev(dut):
         # FIXME check tx_state cycles and emits ACK
         await ClockCycles(dut.clk, TICKS_PER_BIT*24)	# let TX run auto ACK
 
-        debug(dut, '053_SETUP_END')
+        debug(dut, '253_SETUP_END')
 
         await ClockCycles(dut.clk, TICKS_PER_BIT*16)	# gap to next test
 
@@ -1161,7 +1230,7 @@ async def test_usbdev(dut):
     ####
 
     if run_this_test(True):
-        debug(dut, '060_EP0_IN')
+        debug(dut, '260_EP0_IN')
 
         # Setup driver with data in buffer and expect the driver to manage sending
         # For example as a response to SETUP
@@ -1177,7 +1246,7 @@ async def test_usbdev(dut):
         await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)	# host sents IN calling for data
         await usb.set_idle()
 
-        debug(dut, '061_EP0_IN_TX_DATA0')
+        debug(dut, '261_EP0_IN_TX_DATA0')
 
         # FIXME assert we saw request
 
@@ -1187,13 +1256,13 @@ async def test_usbdev(dut):
 
         # FIXME inject delay here to confirm timer limits against spec
 
-        debug(dut, '062_EP0_IN_RX_ACK')
+        debug(dut, '262_EP0_IN_RX_ACK')
         await usb.send_handshake(usb.ACK)	# host ACKing
         await usb.set_idle()
 
         await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## wait for TX to finish
 
-        debug(dut, '063_EP0_IN_CHECK')
+        debug(dut, '263_EP0_IN_CHECK')
         # Originally the interrupt did not fire just because the buffer was full.
         # The the implementation expected the software to over provision a buffer size at least 1 byte longer, but
         #  but to 16 byte granularity that 1 byte turns into 16 which isn't good for a resource constrained environments.
@@ -1223,7 +1292,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
         ## FIXME This was successful, but error handling indication to CPU could be better
 
-        debug(dut, '064_EP0_IN_END')
+        debug(dut, '264_EP0_IN_END')
 
         await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
@@ -1233,7 +1302,7 @@ async def test_usbdev(dut):
     ####
 
     if run_this_test(True):
-        debug(dut, '070_EP0_OUT')
+        debug(dut, '270_EP0_OUT')
 
         # Setup driver with data in buffer and expect the driver to manage receiving
         # For example as a response to SETUP
@@ -1248,7 +1317,7 @@ async def test_usbdev(dut):
 
         await usb.send_token(usb.OUT, addr=ADDRESS, endp=ENDPOINT)	# host sents IN calling for data
 
-        debug(dut, '071_EP0_OUT_RX_DATA0')
+        debug(dut, '271_EP0_OUT_RX_DATA0')
 
         payload = (0xfbfaf9f8, 0xfffefdfc)
         await usb.send_crc16_payload(usb.DATA0, Payload.int32(*payload))	# host sends OUT calling for data
@@ -1280,14 +1349,14 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(BUF_DATA1_20)
         assert data == payload[1], f"PAYLOAD1 expected to see: payload+4 0x{payload[1]:08x} is 0x{data:08x}"
 
-        debug(dut, '072_EP0_OUT_TX_ACK')
+        debug(dut, '272_EP0_OUT_TX_ACK')
 
         ## FIXME validate the PID=ACK auto-tx here
         await ClockCycles(dut.clk, TICKS_PER_BIT*24)	## let TX run auto ACK
 
-        debug(dut, '073_EP0_OUT_CHECK')
+        debug(dut, '273_EP0_OUT_CHECK')
 
-        debug(dut, '074_EP0_OUT_END')
+        debug(dut, '274_EP0_OUT_END')
 
         await ClockCycles(dut.clk, TICKS_PER_BIT*16)
 
@@ -1318,7 +1387,7 @@ async def test_usbdev(dut):
 
     if run_this_test(False):
         ## interrupt NAK
-        debug(dut, '100_IN_NAK')
+        debug(dut, '300_IN_NAK')
 
         await driver.halt(endp=ENDPOINT) # HALT EP=0
         # FIXME randomize values here, set zero, 0xfffff, random to confirm DESC[012] contents do not matter (run the test 3 times)
@@ -1333,16 +1402,16 @@ async def test_usbdev(dut):
         await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT)
         await usb.set_idle()
 
-        debug(dut, '101_IN_NAK_TX_NAK')
+        debug(dut, '301_IN_NAK_TX_NAK')
         ## FIXME observe automatic NAK from hardware (as no descriptor is setup) but endpoint enabled
         await ClockCycles(dut.clk, TICKS_PER_BIT*64)
         await ClockCycles(dut.clk, TICKS_PER_BIT*12)
 
 
-        debug(dut, '102_IN_NAK_CHECK')
+        debug(dut, '302_IN_NAK_CHECK')
 
 
-        debug(dut, '103_IN_NAK_END')
+        debug(dut, '303_IN_NAK_END')
         await ClockCycles(dut.clk, TICKS_PER_BIT*64)
 
 
@@ -1352,7 +1421,7 @@ async def test_usbdev(dut):
 
     if run_this_test(False):
         ## interrupt ACK
-        debug(dut, '110_IN_ACK')
+        debug(dut, '310_IN_ACK')
 
         await driver.halt(endp=ENDPOINT) # HALT EP=0
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
@@ -1367,13 +1436,13 @@ async def test_usbdev(dut):
         await usb.set_idle()
 
 
-        debug(dut, '111_IN_ACK_TX_ACK')
+        debug(dut, '311_IN_ACK_TX_ACK')
         ## FIXME observe automatic ACK with data
         await ClockCycles(dut.clk, TICKS_PER_BIT*64)
         await ClockCycles(dut.clk, TICKS_PER_BIT*12)
 
 
-        debug(dut, '112_IN_ACK_CHECK')
+        debug(dut, '312_IN_ACK_CHECK')
 
         await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
         await ttwb.wb_dump(REG_FRAME, 4)
@@ -1384,7 +1453,7 @@ async def test_usbdev(dut):
         await ttwb.wb_dump(REG_INFO, 4)
 
 
-        debug(dut, '113_IN_ACK_END')
+        debug(dut, '313_IN_ACK_END')
         await ClockCycles(dut.clk, TICKS_PER_BIT*64)
 
 
