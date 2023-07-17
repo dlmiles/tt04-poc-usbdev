@@ -392,6 +392,15 @@ async def test_usbdev(dut):
 
     validate(dut)
 
+    if GL_TEST and 'RANDOM_POLICY' in os.environ:
+        await ClockCycles(dut.clk, 1)		## crank it one tick, should assign some non X states
+        if os.environ['RANDOM_POLICY'] == 'zero' or os.environ['RANDOM_POLICY'].lower() == 'false':
+            ensure_resolvable(dut, policy=False, filter=exclude_re_path)
+        elif os.environ['RANDOM_POLICY'] == 'one' or os.environ['RANDOM_POLICY'].lower() == 'true':
+            ensure_resolvable(dut, policy=True, filter=exclude_re_path)
+        else: # if os.environ['RANDOM_POLICY'] == 'random':
+            ensure_resolvable(dut, policy='random', filter=exclude_re_path)
+
     await ClockCycles(dut.clk, 1)
     dut.ui_in.value = 0
     dut.uio_in.value = 0

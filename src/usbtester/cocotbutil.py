@@ -4,6 +4,9 @@
 #
 #
 #
+import sys
+import hashlib
+
 from typing import Any, Callable
 import cocotb
 from cocotb.triggers import ClockCycles
@@ -92,6 +95,100 @@ def report_resolvable(dut, pfx = None, node = None, depth = None, filter = None)
             if filter is None or filter(design_element._path, design_element._name):
                 dut._log.info("{}{} = {} {}".format(pfx, try_name(design_element), try_value(design_element), type(design_element)))
     pass
+
+
+def random_binary_value(seed: int, path: str, nbits: int) -> BinaryValue:
+    assert isinstance(seed, int)
+    assert isinstance(path, str)
+    # use digest to generate pseudo random bits ?
+    # use seed (binary value) + design hierachy path (string value)
+    # repeat a minimum number of times (4) to ensure input data material is longer than digest length
+    # shift bits out of digest as necessary
+    # if we run out of bits (because the required data is longer than digest bit length,
+    #  repeat but use (5) times for input material
+    # no idea if this produces statistically useful randomness
+    #   with the input dataset expected and the total number of bits expected
+    #   but it looks random for now and is repeatible given same seed/same path
+    # maybe we are better not using a raw digest but a similar and more suited RNG generator
+    key = bin(seed) + path
+    input = key * 4
+    ## Use path and seed to generate value
+    sha1 = hashlib.sha1()
+    sha1.update(input.encode(encoding='UTF-8'))
+    nbytes = int(nbits / 8) + 1
+    binstr = sha1.digest()[-nbytes:]
+    nv = BinaryValue(binstr[-nbits:], n_bits=nbits)	## FIXME crude
+    #print("random_binary_value(seed={}, path={}, nbits={}) = {} {}".format(seed, path, nbits, str(nv), sha1.hexdigest()))
+    return nv
+
+
+def ensure_resolvable_apply(dut, policy, pfx: str, node) -> bool:
+    assert dut is not None
+    assert isinstance(pfx, str), f"pfx: {pfx} {type(pfx)}"
+    assert isinstance(node, cocotb.handle.ModifiableObject), f"node: {type(node)}"
+
+    if node.value.is_resolvable:
+        return
+
+    nbits = node.value.n_bits
+    assert isinstance(nbits, int)
+
+    s = str(node.value)
+
+    xstr = "x" * nbits
+    zstr = "z" * nbits
+
+    nv = None
+    if s == xstr:
+        if policy == True:
+            nv = BinaryValue("1" * nbits, n_bits=nbits)
+        elif policy == False:
+            nv = BinaryValue("0" * nbits, n_bits=nbits)
+        else:
+            seed = cocotb.RANDOM_SEED
+            nv = random_binary_value(seed, node._path, nbits)
+    elif s == zstr:
+        pass
+    else:
+        dut._log.warning("POLICY-RESOLVER {}{} = {} (was {})".format(pfx, node._name, nv, node.value))
+
+    if nv is not None:
+        dut._log.info("POLICY-RESOLVER {}{} = {} (was {})".format(pfx, node._name, nv, node.value))
+        node.value = nv
+        return True
+
+    return False
+
+
+def ensure_resolvable(dut, policy = None, pfx = None, node = None, depth = None, filter = None) -> int:
+    if node is None:
+        seed = cocotb.RANDOM_SEED
+        dut._log.info("POLICY-RESOLVER policy={} seed={}".format(policy, seed))
+    if depth is None:
+        depth = sys.maxsize	# assume all
+    if depth < 0:
+        return
+    toplevel = False
+    if node is None:
+        toplevel = True
+        node = dut
+        if pfx is None:
+            pfx = "DUT."
+    if pfx is None:
+        pfx = ""
+    count = 0
+    for design_element in node:
+        if isinstance(design_element, cocotb.handle.ModifiableObject):
+            if filter is None or filter(design_element._path, design_element._name):
+                if ensure_resolvable_apply(dut, policy, pfx, design_element):
+                    count += 1
+            else:	# probably want to comment this out when correct filtering is known
+                dut._log.warning("POLICY-RESOLVER {}{} = {} (filtered)".format(pfx, design_element._name, str(design_element.value)))
+        elif isinstance(design_element, cocotb.handle.HierarchyObject) and depth > 0:
+            count += ensure_resolvable(dut, policy=policy, pfx=pfx + try_name(design_element) + '.', node=design_element, depth=depth - 1, filter=filter)	# recurse
+    if toplevel:
+        dut._log.info("POLICY-RESOLVER policy={} count={} complete".format(policy, count))
+    return count
 
 
 # Does not nest
@@ -253,6 +350,8 @@ __all__ = [
     'try_path',
     'try_value',
     'report_resolvable',
+    'ensure_resolvable_apply',
+    'ensure_resolvable',
 
     'design_element_internal',
     'design_element',
