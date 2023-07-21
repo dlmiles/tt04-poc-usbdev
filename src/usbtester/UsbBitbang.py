@@ -18,11 +18,6 @@ from .Payload import *
 class UsbBitbang():
     # This class managed bit stream level matters concerning USB
     # It manages low-speed/high-speed difference, NRZI encoding, bit stuffing
-    dut = None
-    TICKS_PER_BIT = None
-    LOW_SPEED = None
-    nrzi_one_count = None
-    nrzi_last = None
 
     DP = 0x01
     DM = 0x02
@@ -35,48 +30,56 @@ class UsbBitbang():
     FS_K = DM		# !D+ bit0  D- bit1 = K   FS
 
     def __init__(self, dut, TICKS_PER_BIT: int, LOW_SPEED: bool = False):
-        self.dut = dut
+        self._dut = dut
         assert(TICKS_PER_BIT >= 0 and type(TICKS_PER_BIT) is int)
-        self.TICKS_PER_BIT = TICKS_PER_BIT
-        self.LOW_SPEED = LOW_SPEED
+        self._TICKS_PER_BIT = TICKS_PER_BIT
+        self._LOW_SPEED = LOW_SPEED
         self.reset()
+
+        self._crc5 = 0
+        self._crc16 = 0
+
+        self._addr = 0
+        self._endp = 0
+        self._data1 = False
+
         return None
 
     def reset(self, last: str = None) -> None:
-        self.nrzi_one_count = 0
-        self.nrzi_last = last
+        self._nrzi_one_count = 0
+        self._nrzi_last = last
 
     async def nrzi(self, whoami: str):
         assert(whoami == 'J' or whoami == 'K')
-        if(self.nrzi_last != whoami):
-            self.nrzi_one_count = 0
+        if(self._nrzi_last != whoami):
+            self._nrzi_one_count = 0
         else:
-            self.nrzi_one_count += 1
-        #elif not self.LOW_SPEED and whoami == 'J':
-        #    self.nrzi_one_count += 1 # only stuff 1's
-        #elif self.LOW_SPEED and whoami == 'K':
-        #    self.nrzi_one_count += 1 # only stuff 1's
-        self.nrzi_last = whoami
-        if self.nrzi_one_count >= 6:	# 0 to 5 provides the 6
+            self._nrzi_one_count += 1
+        #elif not self._LOW_SPEED and whoami == 'J':
+        #    self._nrzi_one_count += 1 # only stuff 1's
+        #elif self._LOW_SPEED and whoami == 'K':
+        #    self._nrzi_one_count += 1 # only stuff 1's
+        self._nrzi_last = whoami
+        if self._nrzi_one_count >= 6:	# 0 to 5 provides the 6
             print("nrzi_bitstuff_insert_transition whoami={} sending !{}".format(whoami, whoami))
             if whoami == 'J':
                 await self.send_K()
             else:
                 await self.send_J()
             # This is reentrant, so it ends up calling itself again,
-            #  which will self.nrzi_one_count = 0
+            #  which will self._nrzi_one_count = 0
             #  the inserted bit doesn't count towards the next total
-            assert self.nrzi_one_count == 0
+            assert self._nrzi_one_count == 0
 
     async def update(self, or_mask: int, ticks: int = None) -> int:
-        v = self.dut.uio_in.value
+        v = self._dut.uio_in.value
         nv = (v & ~self.MASK) | or_mask
-        self.dut.uio_in.value = nv
+        self._dut.uio_in.value = nv
 
         if ticks is None:
-            ticks = self.TICKS_PER_BIT
+            ticks = self._TICKS_PER_BIT
         if ticks > 0:
-            await ClockCycles(self.dut.clk, ticks)
+            await ClockCycles(self._dut.clk, ticks)
 
         return nv
 
@@ -85,9 +88,9 @@ class UsbBitbang():
 
     async def send_J(self, only_when_k: bool = False) -> bool:
         if only_when_k:
-            if self.nrzi_last == 'J':
+            if self._nrzi_last == 'J':
                 return False
-        if self.LOW_SPEED:
+        if self._LOW_SPEED:
             await self.update(self.LS_J)
         else:
             await self.update(self.FS_J)
@@ -95,27 +98,34 @@ class UsbBitbang():
         return True
 
     async def send_K(self) -> None:
-        if self.LOW_SPEED:
+        if self._LOW_SPEED:
             await self.update(self.LS_K)
         else:
             await self.update(self.FS_K)
         await self.nrzi('K')
 
     async def send_0(self) -> None:
-        if self.nrzi_last == 'K':
+        if self._nrzi_last == 'K':
             await self.send_J()
-        elif self.nrzi_last == 'J':
+        elif self._nrzi_last == 'J':
             await self.send_K()
         else:
             assert False, f"use send_idle() first"
 
     async def send_1(self) -> None:
-        if self.nrzi_last == 'K':
+        if self._nrzi_last == 'K':
             await self.send_K()
-        elif self.nrzi_last == 'J':
+        elif self._nrzi_last == 'J':
             await self.send_J()
         else:
             assert False, f"use send_idle() first"
+
+    # Used to generate stuffingError by maintaining line state
+    async def send_same(self, count: int = 1) -> None:
+        nv = self._dut.uio_in.value & self.MASK	# current state
+        for i in range(count):
+            await self.update(nv)
+            # no call to self.nrzi() to update bitstuffer
 
     async def send_bf(self, bit: bool) -> None:
         if bit:
@@ -124,7 +134,7 @@ class UsbBitbang():
             await self.send_0()
 
     async def send_idle(self, ticks: int = None) -> None:
-        if self.LOW_SPEED:
+        if self._LOW_SPEED:
             await self.update(self.LS_J, ticks)	# aka IDLE
         else:
             await self.update(self.FS_J, ticks)	# aka IDLE
@@ -162,20 +172,13 @@ class UsbBitbang():
 
     SYNC = 0x80
 
-    crc5 = 0
-    crc16 = 0
-
-    addr = 0
-    endp = 0
-    data1 = False
-
     # FIXME move these out of this class, into data layer API class
     # This class manages low level packet structure
     # SYNC+EOF and CRC5/CRC16 generation
     async def send_sync(self) -> None:
         # Can't use send_data() here, due to bit stuffing
         #  that is the whole point SYNC is not subject to bit stuffing
-        self.reset(self.nrzi_last)	# reset bitstuffer, but keep state
+        self.reset(self._nrzi_last)	# reset bitstuffer, but keep state
         msg = "SYNC"
         # For testing purposes maybe we should insert a J state to achieve IDLE state
         if await self.send_J(only_when_k=True):
@@ -197,46 +200,46 @@ class UsbBitbang():
         await self.send_J()
 
     def crc5_reset(self) -> None:
-        self.crc5 = 0x1f
+        self._crc5 = 0x1f
 
     def crc5_add(self, bit: bool) -> None:
-        crc5 = self.crc5
+        crc5 = self._crc5
         # 1bit input, right shifting
         lsb = (crc5 & 1) != 0
         crc5 = crc5 >> 1
         if bit != lsb:
             crc5 ^= 0x14	# b10100
-        self.crc5 = crc5
+        self._crc5 = crc5
 
     def crc5_valid(self) -> bool:
-        return ~self.crc5 == 0x0c
+        return ~self._crc5 == 0x0c
 
 
     def crc16_reset(self) -> None:
-        self.crc16 = 0xffff
+        self._crc16 = 0xffff
 
     def crc16_add(self, bit: bool) -> None:
-        crc16 = self.crc16
+        crc16 = self._crc16
         # 1bit input, right shifting
         lsb = (crc16 & 1) != 0
         crc16 = crc16 >> 1
         if bit != lsb:
             crc16 ^= 0xa001	# b10100000 00000001
-        self.crc16 = crc16
+        self._crc16 = crc16
 
     def crc16_valid(self) -> bool:
-        return ~self.crc16 == 0x800d
+        return ~self._crc16 == 0x800d
 
 
     async def send_crc5(self) -> int:
-        crc5_inverted = ~self.crc5 & 0x1f
+        crc5_inverted = ~self._crc5 & 0x1f
         await self.send_data(crc5_inverted, 5, "CRC5")
-        return self.crc5
+        return self._crc5
 
     async def send_crc16(self) -> int:
-        crc16_inverted = ~self.crc16 & 0xffff
+        crc16_inverted = ~self._crc16 & 0xffff
         await self.send_data(crc16_inverted, 16, "CRC16")
-        return self.crc16
+        return self._crc16
 
     def validate_pid(self, pid: int) -> None:
         assert pid & ~0xff == 0, f"pid = {pid} is out of 8-bit range"
@@ -260,15 +263,15 @@ class UsbBitbang():
 
     def resolve_addr(self, addr: int = None) -> int:
         if addr is None:
-            print("resolve_addr({}) = {}".format(addr, self.addr))
-            return self.addr
+            print("resolve_addr({}) = {}".format(addr, self._addr))
+            return self._addr
         self.validate_addr(addr)
         return addr
 
     def resolve_endp(self, endp: int = None) -> int:
         if endp is None:
-            print("resolve_endp({}) = {}".format(endp, self.endp))
-            return self.endp
+            print("resolve_endp({}) = {}".format(endp, self._endp))
+            return self._endp
         self.validate_endp(endp)
         return endp
 
@@ -333,9 +336,9 @@ class UsbBitbang():
         if crc5 is None:
             await self.send_crc5()
         else:
-            crc5_inverted = ~self.crc5 & 0x1f
+            crc5_inverted = ~self._crc5 & 0x1f
             if crc5 != crc5_inverted:
-                self.dut._log.warning(f"crc5 mismatch (provided) {crc5:02x} != {crc5_inverted:02x} (computed) {self.crc5:02x} (actual)")
+                self._dut._log.warning(f"crc5 mismatch (provided) {crc5:02x} != {crc5_inverted:02x} (computed) {self._crc5:02x} (actual)")
             assert crc5 & ~0x1f == 0, f"crc5 = {crc5:02x} is out of 5-bit range"
             await self.send_data(crc5, 5, "CRC5")	# we send the one provided in argument
         await self.send_eop()
@@ -366,9 +369,9 @@ class UsbBitbang():
         if crc16 is None:
             await self.send_crc16()
         else:
-            crc16_inverted = ~self.crc16 & 0xffff
+            crc16_inverted = ~self._crc16 & 0xffff
             if crc16 != crc16_inverted:
-                self.dut._log.warning(f"crc16 mismatch (provided) {crc16:04x} != {crc16_inverted:04x} (computed) {self.crc16:04x} (actual)")
+                self._dut._log.warning(f"crc16 mismatch (provided) {crc16:04x} != {crc16_inverted:04x} (computed) {self._crc16:04x} (actual)")
             assert crc16 & ~0xffff == 0, f"crc16 = {crc16:04x} is out of 16-bit range"
             await self.send_data(crc16, 16, "CRC16")	# we send the one provided in argument
         await self.send_eop()
@@ -381,15 +384,15 @@ class UsbBitbang():
     async def send_out_data0(self, payload: Payload, addr: int = None, endp: int = None, crc16: int = None) -> None:
         await self.send_token(self.OUT, addr, endp)
         await self.send_crc16_payload(self.DATA0, payload, crc16)
-        self.data1 = True
+        self._data1 = True
 
     async def send_out_data1(self, payload: Payload, addr: int = None, endp: int = None, crc16: int = None) -> None:
         await self.send_token(self.OUT, addr, endp)
         await self.send_crc16_payload(self.DATA1, payload, crc16)
-        self.data1 = False
+        self._data1 = False
 
     async def send_out_data(self, payload: Payload, addr: int = None, endp: int = None, crc16: int = None) -> None:
-        if self.data1:
+        if self._data1:
             await self.send_out_data1(payload, addr, endp, crc16)
         else:
             await self.send_out_data0(payload, addr, endp, crc16)
@@ -403,7 +406,7 @@ class UsbBitbang():
         await self.send_crc16_payload(self.DATA1, payload, crc16)
 
     async def send_in_data(self, payload: Payload, addr: int = None, endp: int = None, crc16: int = None) -> None:
-        if self.data1:
+        if self._data1:
             await self.send_in_data1(payload, addr, endp, crc16)
         else:
             await self.send_in_data0(payload, addr, endp, crc16)
