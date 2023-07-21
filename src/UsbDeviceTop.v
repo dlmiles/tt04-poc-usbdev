@@ -464,7 +464,6 @@ module PhyCc (
   wire                output_resume_ccToggle_io_output_valid;
   wire                output_power_buffercc_io_dataOut;
   wire                output_disconnect_buffercc_io_dataOut;
-  wire                init;
   wire                ctrl_ctrl_logic_io_phy_cc_input_tx_stream_ccToggle_io_output_m2sPipe_valid;
   wire                ctrl_ctrl_logic_io_phy_cc_input_tx_stream_ccToggle_io_output_m2sPipe_ready;
   wire                ctrl_ctrl_logic_io_phy_cc_input_tx_stream_ccToggle_io_output_m2sPipe_payload_last;
@@ -505,13 +504,13 @@ module PhyCc (
     .ctrlCd_clk               (ctrlCd_clk                                    ), //i
     .phyCd_reset_synchronized (pulseCCByToggle_2_phyCd_reset_synchronized_1  )  //i
   );
-  BufferCC_14 output_rx_active_buffercc (
+  BufferCC output_rx_active_buffercc (
     .io_dataIn    (output_rx_active                    ), //i
     .io_dataOut   (output_rx_active_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                          ), //i
     .ctrlCd_reset (ctrlCd_reset                        )  //i
   );
-  BufferCC_14 output_rx_stuffingError_buffercc (
+  BufferCC output_rx_stuffingError_buffercc (
     .io_dataIn    (output_rx_stuffingError                    ), //i
     .io_dataOut   (output_rx_stuffingError_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                                 ), //i
@@ -543,13 +542,13 @@ module PhyCc (
     .ctrlCd_clk               (ctrlCd_clk                                  ), //i
     .phyCd_reset_synchronized (pulseCCByToggle_2_phyCd_reset_synchronized_1)  //i
   );
-  BufferCC_14 output_reset_buffercc (
+  BufferCC output_reset_buffercc (
     .io_dataIn    (output_reset                    ), //i
     .io_dataOut   (output_reset_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                      ), //i
     .ctrlCd_reset (ctrlCd_reset                    )  //i
   );
-  BufferCC_14 output_suspend_buffercc (
+  BufferCC output_suspend_buffercc (
     .io_dataIn    (output_suspend                    ), //i
     .io_dataOut   (output_suspend_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                        ), //i
@@ -563,19 +562,18 @@ module PhyCc (
     .ctrlCd_clk               (ctrlCd_clk                                  ), //i
     .phyCd_reset_synchronized (pulseCCByToggle_2_phyCd_reset_synchronized_1)  //i
   );
-  BufferCC_14 output_power_buffercc (
+  BufferCC output_power_buffercc (
     .io_dataIn    (output_power                    ), //i
     .io_dataOut   (output_power_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                      ), //i
     .ctrlCd_reset (ctrlCd_reset                    )  //i
   );
-  BufferCC_14 output_disconnect_buffercc (
+  BufferCC output_disconnect_buffercc (
     .io_dataIn    (output_disconnect                    ), //i
     .io_dataOut   (output_disconnect_buffercc_io_dataOut), //o
     .ctrlCd_clk   (ctrlCd_clk                           ), //i
     .ctrlCd_reset (ctrlCd_reset                         )  //i
   );
-  assign init = 1'b0;
   assign input_tx_stream_ready = input_tx_stream_ccToggle_io_input_ready;
   always @(*) begin
     input_tx_stream_ccToggle_io_output_ready = ctrl_ctrl_logic_io_phy_cc_input_tx_stream_ccToggle_io_output_m2sPipe_ready;
@@ -5330,9 +5328,9 @@ module WishboneToBmb (
 
 endmodule
 
-//BufferCC_8 replaced by BufferCC_14
+//BufferCC_8 replaced by BufferCC
 
-//BufferCC_7 replaced by BufferCC_14
+//BufferCC_7 replaced by BufferCC
 
 module FlowCCByToggle_1 (
   input               io_input_valid,
@@ -5382,9 +5380,9 @@ module FlowCCByToggle_1 (
 
 endmodule
 
-//BufferCC_6 replaced by BufferCC_14
+//BufferCC_6 replaced by BufferCC
 
-//BufferCC_5 replaced by BufferCC_14
+//BufferCC_5 replaced by BufferCC
 
 module PulseCCByToggle_1 (
   input               io_pulseIn,
@@ -5443,23 +5441,49 @@ module BufferCC_2 (
   (* async_reg = "true" *) reg                 buffers_0;
   (* async_reg = "true" *) reg                 buffers_1;
 
+  initial begin
+  `ifndef SYNTHESIS
+    buffers_0 = $urandom;
+    buffers_1 = $urandom;
+  `endif
+  end
+
   assign io_dataOut = buffers_1;
-  always @(posedge phyCd_clk or posedge phyCd_reset) begin
-    if(phyCd_reset) begin
-      buffers_0 <= 1'b0;
-      buffers_1 <= 1'b0;
-    end else begin
-      buffers_0 <= io_dataIn;
-      buffers_1 <= buffers_0;
-    end
+  always @(posedge phyCd_clk) begin
+    buffers_0 <= io_dataIn;
+    buffers_1 <= buffers_0;
   end
 
 
 endmodule
 
-//BufferCC_1 replaced by BufferCC_14
+//BufferCC_1 replaced by BufferCC
 
-//BufferCC replaced by BufferCC_14
+module BufferCC (
+  input               io_dataIn,
+  output              io_dataOut,
+  input               ctrlCd_clk,
+  input               ctrlCd_reset
+);
+
+  (* async_reg = "true" *) reg                 buffers_0;
+  (* async_reg = "true" *) reg                 buffers_1;
+
+  initial begin
+  `ifndef SYNTHESIS
+    buffers_0 = $urandom;
+    buffers_1 = $urandom;
+  `endif
+  end
+
+  assign io_dataOut = buffers_1;
+  always @(posedge ctrlCd_clk) begin
+    buffers_0 <= io_dataIn;
+    buffers_1 <= buffers_0;
+  end
+
+
+endmodule
 
 module FlowCCByToggle (
   input               io_input_valid,
