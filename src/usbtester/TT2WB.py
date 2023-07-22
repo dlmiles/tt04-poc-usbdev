@@ -38,10 +38,12 @@ ACK_BITID = 4
 MIN_ADDRESS = 0x0000
 MAX_ADDRESS = 0xffff
 
+# CONFIGURATION: Everything should derive from these two values:
 ADR_WIDTH = 16
 ADR_BUS_WIDTH = 14
 
 ADR_SHIFT_COUNT = ADR_WIDTH - ADR_BUS_WIDTH # 2
+assert ADR_SHIFT_COUNT >= 0
 ADR_ALIGN_WIDTH = 2**ADR_SHIFT_COUNT # 4
 ADR_MASK = (2**ADR_WIDTH)-1 # 0xffff
 ADR_ZERO_MASK = (2**ADR_SHIFT_COUNT)-1 # 0x0003
@@ -51,6 +53,7 @@ ADR_SHIFTED_MASK = ADR_USED_MASK >> ADR_SHIFT_COUNT # 0x3fff
 MAX_CYCLES  = 100000
 
 
+# Too lazy to validate other scenarios
 assert ADR_SHIFT_COUNT == 2
 assert ADR_ALIGN_WIDTH == 4
 assert ADR_MASK == 0xffff
@@ -60,12 +63,12 @@ assert ADR_SHIFTED_MASK == 0x3fff
 
 
 class TT2WB():
-    dut = None
-    enable = False
-    addr = None
-    data = None
-    need_issue = False
-    force_default = False
+    #_dut = None
+    #_enable = False
+    #_addr = None
+    #_data = None
+    #_need_issue = False
+    #_force_default = False
     UIO_IN_MASK = 0xe0	# bit7..bit5 are input, bit4 output, bit3..bit0 unused
     ADDR_DESC = {
         # Here you can create a dict name for address location to help diagnostics in logs
@@ -91,15 +94,19 @@ class TT2WB():
         EXE_WRITE: "EXE_WRITE"
     }
 
-    def __init__(self, dut, MIN_ADDRESS=MIN_ADDRESS, MAX_ADDRESS=MAX_ADDRESS, MAX_CYCLES=MAX_CYCLES):
+    def __init__(self, dut, MIN_ADDRESS: int = MIN_ADDRESS, MAX_ADDRESS: int = MAX_ADDRESS, MAX_CYCLES: int = MAX_CYCLES):
         assert(dut is not None)
         # FIXME check we have signals in dut: dut.uio_in, dut.uio_out, dut.ui_in, dut.uo_out
-        self.dut = dut
+        self._dut = dut
         self.MIN_ADDRESS = MIN_ADDRESS
         self.MAX_ADDRESS = MAX_ADDRESS
         self.MAX_CYCLES = MAX_CYCLES
 
-        self.enable = False
+        self._enable = False
+        self._need_issue = False
+        self._force_default = False
+        self._addr = None
+        self._data = None
 
         return None
 
@@ -134,7 +141,7 @@ class TT2WB():
         assert addr <= self.MAX_ADDRESS, f"TT2WB address {addr} {addr:04x} is out of range, MAX_ADDRESS={self.MAX_ADDRESS}"
 
     def check_enable(self) -> None:
-        assert self.enable, f"TT2WB hardware not in enable state for this operation, use tt2wb.exe_enable()"
+        assert self._enable, f"TT2WB hardware not in enable state for this operation, use tt2wb.exe_enable()"
         return None
 
     def addr_align(self, addr: int) -> int:
@@ -142,13 +149,13 @@ class TT2WB():
 
     def resolve_addr(self, addr: int = None) -> int:
         if addr is None:
-            addr = self.addr
+            addr = self._addr
         assert addr is not None, f"TT2WB addr = {addr}"
         return addr
 
     def resolve_data(self, data: int = None) -> int:
         if data is None:
-            data = self.data
+            data = self._data
         assert data is not None, f"TT2WB data = {data}"
         return data
 
@@ -157,17 +164,17 @@ class TT2WB():
             cmd = uio_in & CMD_MASK
             exe = ui_in & EXE_MASK
             newval = cmd == CMD_EXEC and (exe == EXE_READ or exe == EXE_WRITE)
-            self.need_issue = newval
-        return self.need_issue
+            self._need_issue = newval
+        return self._need_issue
 
     async def send(self, uio_in: int, ui_in: int, save_restore: bool = False) -> None:
         if save_restore:
             self.save()
 
-        self.dut.uio_in.value = (self.dut.uio_in.value & ~self.UIO_IN_MASK) | uio_in
-        self.dut.ui_in.value = ui_in
+        self._dut.uio_in.value = (self._dut.uio_in.value & ~self.UIO_IN_MASK) | uio_in
+        self._dut.ui_in.value = ui_in
 
-        await ClockCycles(self.dut.clk, 1)
+        await ClockCycles(self._dut.clk, 1)
 
         if save_restore:
             self.restore()
@@ -178,23 +185,23 @@ class TT2WB():
 
     async def recv(self, uio_in: int = None, ui_in: int = None, pipeline: bool = False) -> int:
         if uio_in is not None:
-            self.dut.uio_in.value = (self.dut.uio_in.value & ~self.UIO_IN_MASK) | uio_in
+            self._dut.uio_in.value = (self._dut.uio_in.value & ~self.UIO_IN_MASK) | uio_in
         if ui_in is not None:
-            self.dut.ui_in.value = ui_in
+            self._dut.ui_in.value = ui_in
 
-        await ClockCycles(self.dut.clk, 1)
+        await ClockCycles(self._dut.clk, 1)
 
-        data = self.dut.uo_out.value
+        data = self._dut.uo_out.value
 
         if not pipeline:
-            await ClockCycles(self.dut.clk, 1)
+            await ClockCycles(self._dut.clk, 1)
 
         self.update_need_issue(uio_in, ui_in)
 
         return data
 
     def is_ack(self) -> bool:
-        return extract_bit(self.dut.dut.uio_out.value, ACK_BITID)
+        return extract_bit(self._dut.uio_out.value, ACK_BITID)
 
     async def wb_ACK_wait(self, cycles: int = None, can_raise: bool = True) -> bool:
         if cycles is None:
@@ -204,11 +211,11 @@ class TT2WB():
             return True
 
         #print("wb_ACK_wait cycles={}".format(cycles))
-        for i in range(0, cycles):
+        for i in range(cycles):
             if self.is_ack():
-                self.dut._log.debug("WB_ACK cycles={} {}".format(i, True))
+                self._dut._log.debug("WB_ACK cycles={} {}".format(i, True))
                 return True
-            await ClockCycles(self.dut.clk, 1)
+            await ClockCycles(self._dut.clk, 1)
 
         if can_raise:
             raise Exception(f"TT2WB no wb_ACK received after {cycles} cycles")
@@ -219,7 +226,7 @@ class TT2WB():
 
     async def exe_reset(self) -> None:
         await self.send(CMD_EXEC, EXE_RESET)
-        self.enable = False
+        self._enable = False
 
     async def exe_wbsel(self, sel: int = 0xf) -> None:
         # FIXME we can track the last wbsel to mitigate unnecessary changes
@@ -228,34 +235,34 @@ class TT2WB():
 
     async def exe_enable(self) -> None:
         await self.send(CMD_EXEC, EXE_ENABLE)
-        self.enable = True
+        self._enable = True
 
     async def exe_disable(self) -> None:
         await self.send(CMD_EXEC, EXE_DISABLE)
-        self.enable = False
+        self._enable = False
 
     async def cmd_addr(self, addr: int, force: bool = False) -> bool:
         self.check_address(addr)
         # If the internal ADR state is already setup to 'addr' then we can
         #  suppress using he cycles to send instruction to change it
-        if force or self.addr is None or self.addr != addr:
+        if force or self._addr is None or self._addr != addr:
             await self.send(CMD_AD0, addr & 0xff)
             await self.send(CMD_AD1, (addr >> 8) & 0xff)
-            self.addr = addr
+            self._addr = addr
             return True
 
         return False
 
     async def cmd_data(self, data: int, force: bool = False) -> bool:
         assert data is not None, f"data = {data}"
-        if force or self.data is None or self.data != data:
+        if force or self._data is None or self._data != data:
             d = data
-            for i in range(0, 4):
+            for i in range(4):
                 # FIXME This assumes the last command wasn't a CMD_DO0, needs detection and assert
                 # caller can use exe_enable() before ?
                 await self.send(CMD_DO0, d & 0xff)
                 d = d >> 8
-            self.data = data
+            self._data = data
             return True
 
         return False
@@ -264,15 +271,15 @@ class TT2WB():
         self.check_enable()
 
         if addr is not None:
-            await self.cmd_addr(addr, self.force_default)
+            await self.cmd_addr(addr, self._force_default)
         addr = self.resolve_addr(addr)
 
-        if self.need_issue:	# insert extra CMD to reset issue=0 in tt2wb hardware
-            #print("exe_read_BinaryValue({}) need_issue={} invoking send(CMD_EXEC, EXE_ENABLE)".format(addr, self.need_issue))
+        if self._need_issue:	# insert extra CMD to reset issue=0 in tt2wb hardware
+            #print("exe_read_BinaryValue({}) need_issue={} invoking send(CMD_EXEC, EXE_ENABLE)".format(addr, self._need_issue))
             await self.send(CMD_EXEC, EXE_ENABLE)
 
         await self.send(CMD_EXEC, EXE_READ)
-        self.dut._log.debug("WB_READ  @0x{:04x}".format(addr))
+        self._dut._log.debug("WB_READ  @0x{:04x}".format(addr))
 
         if not await self.wb_ACK_wait():
             # need_issue mechanism takes care with deferring the reset of issue=0
@@ -313,11 +320,11 @@ class TT2WB():
             data = (d3 << 24) | (d2 << 16) | (d1 << 8) | d0
             fmtstr = format(data, addr) if(format) else ''
             fmtstr = '' if(fmtstr is None) else fmtstr
-            self.dut._log.info("WB_READ  @{} = 0x{:08x}  b{} {} {} {} {}".format(self.addr_desc(addr), data, d3, d2, d1, d0, fmtstr))
+            self._dut._log.info("WB_READ  @{} = 0x{:08x}  b{} {} {} {} {}".format(self.addr_desc(addr), data, d3, d2, d1, d0, fmtstr))
             self.reg_dump(addr, data, 'WB_READ ')
             return data
 
-        self.dut._log.info("WB_READ  @{} = b{} {} {} {}  NOT-RESOLVABLE".format(self.addr_desc(addr), d3, d2, d1, d0))
+        self._dut._log.info("WB_READ  @{} = b{} {} {} {}  NOT-RESOLVABLE".format(self.addr_desc(addr), d3, d2, d1, d0))
         return None
 
 
@@ -325,19 +332,19 @@ class TT2WB():
         self.check_enable()
 
         if addr is not None:
-            await self.cmd_addr(addr, self.force_default)
+            await self.cmd_addr(addr, self._force_default)
         addr = self.resolve_addr(addr)
 
         if data is not None:
-            await self.cmd_data(data, self.force_default)
+            await self.cmd_data(data, self._force_default)
         data = self.resolve_data(data)
 
-        if self.need_issue:	# insert extra CMD to reset issue=0 in tt2wb hardware
-            #print("exe_write(data={}, addr={}) need_issue={} invoking send(CMD_EXEC, EXE_ENABLE)".format(data, addr, self.need_issue))
+        if self._need_issue:	# insert extra CMD to reset issue=0 in tt2wb hardware
+            #print("exe_write(data={}, addr={}) need_issue={} invoking send(CMD_EXEC, EXE_ENABLE)".format(data, addr, self._need_issue))
             await self.send(CMD_EXEC, EXE_ENABLE)
 
         await self.send(CMD_EXEC, EXE_WRITE)
-        self.dut._log.debug("WB_WRITE {}".format(self.addr_desc(addr)))
+        self._dut._log.debug("WB_WRITE {}".format(self.addr_desc(addr)))
 
         if wait_ack:
             ack = await self.wb_ACK_wait() 	# will raise exception on timeout
@@ -348,7 +355,7 @@ class TT2WB():
 
         fmtstr = format(data, addr) if(format) else ''
         fmtstr = '' if(fmtstr is None) else fmtstr
-        self.dut._log.info("WB_WRITE @{} = 0x{:08x} {} {}".format(self.addr_desc(addr), data, ackstr, fmtstr))
+        self._dut._log.info("WB_WRITE @{} = 0x{:08x} {} {}".format(self.addr_desc(addr), data, ackstr, fmtstr))
         self.reg_dump(addr, data, 'WB_WRITE')
         return ack
 
@@ -434,7 +441,7 @@ class TT2WB():
         if regname:
             regdesc = addr_to_regdesc(addr, value)
             if regdesc:
-                self.dut._log.info("{} @{} {:13s} = {}".format(pfx, self.addr_desc(addr), regname, regdesc))
+                self._dut._log.info("{} @{} {:13s} = {}".format(pfx, self.addr_desc(addr), regname, regdesc))
 
     async def wb_dump(self, addr: int, count: int) -> int:
         self.check_enable()
@@ -454,7 +461,7 @@ class TT2WB():
             regname = addr_to_regname(addr)
             if regname and count == ADR_ALIGN_WIDTH:
                 offstr = " {:13s}".format(regname)
-            self.dut._log.info("WB_DUMP  @{}{} = {}  b{} {} {} {}  {}  {}{}{}{}".format(self.addr_desc(addr), offstr, data, d3, d2, d1, d0, d32, s0, s1, s2, s3))
+            self._dut._log.info("WB_DUMP  @{}{} = {}  b{} {} {} {}  {}  {}{}{}{}".format(self.addr_desc(addr), offstr, data, d3, d2, d1, d0, d32, s0, s1, s2, s3))
             if d32.is_resolvable:
                 self.reg_dump(addr, d32.integer, 'WB_DUMP ')
             left -= ADR_ALIGN_WIDTH
