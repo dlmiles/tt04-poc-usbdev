@@ -1141,7 +1141,8 @@ async def test_usbdev(dut):
             data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
             assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
 
-            # eop_count=0 inhibits the auto-reset to allow errorTimeout to run
+            # eop_count=0 inhibits the auto-reset to allow errorTimeout to run, this was more for a manual inspection of VCD to validate errorTimeout
+            # because there is no EOP then the token packet is never complete and no interupt occurs
             await test_bitbang_token_stuffing(dut, usb, token=usb.SETUP, eop_count=0, stuffing_error=stuffing_error)
             setup = (0x04030201, 0x08070605, 0x304f)
             await test_bitbang_packet(dut, usb, pid=0xc3, payload=setup[0:len(setup)-1], crc16=setup[-1], eop_count=0)
@@ -1152,10 +1153,8 @@ async def test_usbdev(dut):
 
             debug(dut, f"{testid+2}{testname}_CHECK")
 
-            #assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
-            if signal_interrupts(dut):
-                dut._log.warning(f"INTERRUPT in {testid}{testname} signal_interrupts={signal_interrupts(dut)}")
-            # FIXME remove this, work out why we are getting interrupts
+            # it is possible to see interrupt occur, for stuffingError after EOP scenario, stuffing_error==6, eop_count=1
+            assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
             await ttwb.wb_write(REG_INTERRUPT, reg_interrupt(all=True), regwr)	# UVM=W1C
 
             data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
@@ -1176,9 +1175,10 @@ async def test_usbdev(dut):
             data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
             assert data == 0, f"REG_INTERRUPT expects all clear {data:08x}"
 
-            # eop_count=0 inhibits the auto-reset to allow errorTimeout to run
             await test_bitbang_token(dut, usb, token=usb.SETUP)
             setup = (0x04030201, 0x08070605, 0x304f)
+            # eop_count=0 inhibits the auto-reset to allow errorTimeout to run, this was more for a manual inspection of VCD to validate errorTimeout
+            # because there is no EOP then the data packet is never complete and no interupt occurs
             await test_bitbang_packet_stuffing(dut, usb, pid=0xc3, payload=setup[0:len(setup)-1], crc16=setup[-1], eop_count=0, stuffing_error=stuffing_error)
 
             debug(dut, f"{testid+1}{testname}_WAIT")
@@ -1187,10 +1187,8 @@ async def test_usbdev(dut):
 
             debug(dut, f"{testid+2}{testname}_CHECK")
 
-            #assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
-            if signal_interrupts(dut):
-                dut._log.warning(f"INTERRUPT in {testid}{testname} signal_interrupts={signal_interrupts(dut)}")
-            # FIXME remove this, work out why we are getting interrupts
+            # it is possible to see interrupt occur, for stuffingError after EOP scenario, stuffing_error==6, eop_count=1
+            assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
             await ttwb.wb_write(REG_INTERRUPT, reg_interrupt(all=True), regwr)	# UVM=W1C
 
             data = await ttwb.wb_read(REG_INTERRUPT, regdesc)
