@@ -15,7 +15,7 @@ from usbtester.UsbBitbang import *
 def invalidate(value: int, width: int) -> int:
     assert width > 0 and width <= 32, f"width invalid: {width}"
     mask = (1 << width) - 1
-    for i in range(0, 1000):
+    for i in range(1000):
         xor = random.randint(1, mask)
         if xor != 0:	# should not be the case with randint(a=1, ...)
             return value ^ xor
@@ -32,7 +32,7 @@ async def test_bitbang_token(dut,
     ):
     # SYNC sequence 8'b00000001  KJKJKJKK
     # FIXME check we can hold a random number of J-IDLE states here
-    for i in range(0, sync_count):
+    for i in range(sync_count):
         await usb.send_0()	# LSB0
         await usb.send_0()
         await usb.send_0()
@@ -85,7 +85,7 @@ async def test_bitbang_token(dut,
     await usb.send_0()
     await usb.send_0()  # MSB4
 
-    for i in range(0, eop_count):
+    for i in range(eop_count):
         await usb.send_eop()	# EOP - SE0 SE0 J
 
     await usb.set_idle()
@@ -102,7 +102,7 @@ async def test_bitbang_packet(dut,
     invalid_crc16: bool = False,
     eop_count: int = 1
     ):
-    for i in range(0, sync_count):
+    for i in range(sync_count):
         await usb.send_sync()    # SYNC 8'b00000001 0x80 KJKJKJKK
 
     if invalid_pid:
@@ -120,7 +120,7 @@ async def test_bitbang_packet(dut,
         crc16 = invalidate(crc16, 16)
     await usb.send_data(crc16, 16, "CRC16")	# CRC16
 
-    for i in range(0, eop_count):
+    for i in range(eop_count):
         await usb.send_eop()	# EOP - SE0 SE0 J
 
     await usb.set_idle()
@@ -138,7 +138,7 @@ async def test_bitbang_token_stuffing(dut,
 
     # SYNC sequence 8'b00000001  KJKJKJKK
     # FIXME check we can hold a random number of J-IDLE states here
-    for i in range(0, sync_count):
+    for i in range(sync_count):
         await usb.send_0()	# LSB0
         await usb.send_0()
         await usb.send_0()
@@ -206,7 +206,7 @@ async def test_bitbang_token_stuffing(dut,
     if stuffing_error == 5:	# before EOP
         await usb.send_same(count=7)
 
-    for i in range(0, eop_count):
+    for i in range(eop_count):
         await usb.send_eop()	# EOP - SE0 SE0 J
 
     if stuffing_error == 6:	# after EOP
@@ -227,7 +227,7 @@ async def test_bitbang_packet_stuffing(dut,
     eop_count: int = 1,
     stuffing_error: int = 0
     ):
-    for i in range(0, sync_count):
+    for i in range(sync_count):
         await usb.send_sync()    # SYNC 8'b00000001 0x80 KJKJKJKK
 
     if stuffing_error == 1:	# immedately after SYNC
@@ -260,7 +260,7 @@ async def test_bitbang_packet_stuffing(dut,
     if stuffing_error == 5:	# before EOP
         await usb.send_same(count=7)
 
-    for i in range(0, eop_count):
+    for i in range(eop_count):
         await usb.send_eop()	# EOP - SE0 SE0 J
 
     if stuffing_error == 6:	# after EOP
