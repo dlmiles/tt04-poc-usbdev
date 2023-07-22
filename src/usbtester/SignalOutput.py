@@ -20,19 +20,6 @@ from .SignalAccessor import *
 # This class is a Signal (output) monitor.
 #
 class SignalOutput():
-    task = None
-    running = None
-    assert_resolvable = None
-    assert_encoded = None
-
-    label = None
-    signal_dp = None
-    signal_path_dp = None
-    signal_dm = None
-    signal_path_dm = None
-
-    file_handle = None
-
     X = 'x'
     SE1 = '1'
     SE0 = '0'
@@ -42,31 +29,40 @@ class SignalOutput():
     def __init__(self, dut):
         assert dut is not None
         self._dut = dut
-        self.running = False
+        self._running = False
+        self._task = None
+
+        self._assert_resolvable = None
+        self._assert_encoded = None
+
+        self._file_handle = None
+
+        self.unregister()	# initialize members
+
         return None
 
     def unregister(self):
-        if self.task is not None:
-            self.running = False
-            self.task.kill()
+        if self._task is not None:
+            self._running = False
+            self._task.kill()
 
         self.file_close()
 
-        self.label = None
-        self.signal_dp = None
-        self.signal_path_dp = None
-        self.signal_dm = None
-        self.signal_path_dm = None
+        self._label = None
+        self._signal_dp = None
+        self._signal_path_dp = None
+        self._signal_dm = None
+        self._signal_path_dm = None
 
     @cocotb.coroutine
     def monitor_coroutine(self, dut):
-        dut._log.info("SignalOutput[{}]: started".format(self.label))
+        dut._log.info("SignalOutput[{}]: started".format(self._label))
 
-        last_encoded = self.encode_signal(self.signal_dp, self.signal_dm)
+        last_encoded = self.encode_signal(self._signal_dp, self._signal_dm)
 
         same_count = 0
         i = 0
-        while self.running:
+        while self._running:
             yield ClockCycles(dut.clk, 1)
 
             # What is this all about ?
@@ -77,16 +73,16 @@ class SignalOutput():
             # wait_since_transition
             #
 
-            if self.assert_resolvable is not None:
-                if self.assert_resolvable == True:
-                    assert     self.signal_dp.value.is_resolvable and     self.signal_dm.value.is_resolvable, f"assert_resolvable={self.assert_resolvable} dp={str(self.signal_dp.value)} dm={str(self.signal_dm.value)} expecting resolvable"
-                if self.assert_resolvable == False:
-                    assert not self.signal_dp.value.is_resolvable and not self.signal_dm.value.is_resolvable, f"assert_resolvable={self.assert_resolvable} dp={str(self.signal_dp.value)} dm={str(self.signal_dm.value)} expecting not resolvable"
+            if self._assert_resolvable is not None:
+                if self._assert_resolvable == True:
+                    assert     self._signal_dp.value.is_resolvable and     self._signal_dm.value.is_resolvable, f"assert_resolvable={self._assert_resolvable} dp={str(self._signal_dp.value)} dm={str(self._signal_dm.value)} expecting resolvable"
+                if self._assert_resolvable == False:
+                    assert not self._signal_dp.value.is_resolvable and not self._signal_dm.value.is_resolvable, f"assert_resolvable={self._assert_resolvable} dp={str(self._signal_dp.value)} dm={str(self._signal_dm.value)} expecting not resolvable"
 
-            encoded = self.encode_signal(self.signal_dp, self.signal_dm)
+            encoded = self.encode_signal(self._signal_dp, self._signal_dm)
 
-            if self.assert_encoded is not None:
-                assert self.assert_encoded == encoded, f"assert_encoded={self.assert_encoded} dp={str(self.signal_dp.value)} dm={str(self.signal_dm.value)} got {encoded}"
+            if self._assert_encoded is not None:
+                assert self._assert_encoded == encoded, f"assert_encoded={self._assert_encoded} dp={str(self._signal_dp.value)} dm={str(self._signal_dm.value)} got {encoded}"
 
             is_transition = last_encoded != encoded
 
@@ -112,13 +108,13 @@ class SignalOutput():
                     self.file_open()
 
             if is_transition:
-                dut._log.info("SignalOutput[{}]: i = {}  {} {} => {}".format(self.label, i, str(self.signal_dp.value), str(self.signal_dm.value), encoded))
+                dut._log.info("SignalOutput[{}]: i = {}  {} {} => {}".format(self._label, i, str(self._signal_dp.value), str(self._signal_dm.value), encoded))
 
             last_encoded = encoded
             i += 1
 
         retval = i
-        dut._log.info("SignalOutput[{}]: finished = {}".format(self.label, retval))
+        dut._log.info("SignalOutput[{}]: finished = {}".format(self._label, retval))
         return retval
 
     # dp_sa_or_path: SignalAccessor|str
@@ -138,36 +134,36 @@ class SignalOutput():
         #if signal_dm is None:
         #    raise Exception(f"signal {signal_path_dm} does not exist")
 
-        self.label = label
+        self._label = label
 
-        self.signal_path_dp = signal_path_dp
-        self.signal_dp = signal_dp
+        self._signal_path_dp = signal_path_dp
+        self._signal_dp = signal_dp
 
-        self.signal_path_dm = signal_path_dm
-        self.signal_dm = signal_dm
+        self._signal_path_dm = signal_path_dm
+        self._signal_dm = signal_dm
 
         self.wait_for_transition = False
         self.wait_since_transition = False
         self.wait_since_count = 0
 
-        self.running = True
-        self.task = cocotb.create_task(self.monitor_coroutine(self._dut))
+        self._running = True
+        self._task = cocotb.create_task(self.monitor_coroutine(self._dut))
 
-        return self.task
+        return self._task
 
     def assert_resolvable_mode(self, mode: bool = None) -> bool:
         assert mode is None or type(mode) is bool
-        retval = self.assert_resolvable
+        retval = self._assert_resolvable
         self._dut._log.info("SignalOutput.assert_resolvable_mode({}) = {} (old)".format(mode, retval))
-        self.assert_resolvable = mode
+        self._assert_resolvable = mode
         return retval
 
     # encoded as in the encoded state of the lines
     def assert_encoded_mode(self, mode: str = None) -> str:
         assert mode is None or type(mode) is str
-        retval = self.assert_encoded
+        retval = self._assert_encoded
         self._dut._log.info("SignalOutput.assert_encoded_mode({}) = {} (old)".format(mode, retval))
-        self.assert_encoded = mode
+        self._assert_encoded = mode
         return retval
 
     # FIXME WIP negative index ?
@@ -214,9 +210,9 @@ class SignalOutput():
         return None
 
     def file_close(self) -> bool:
-        if self.file_handle is not None:
-            self.file_handle.close()
-            self.file_handle = None
+        if self._file_handle is not None:
+            self._file_handle.close()
+            self._file_handle = None
             return True
         return False
 
@@ -227,7 +223,7 @@ class SignalOutput():
         return None
 
     def file_emit(self, encoded) -> bool:
-        if self.file_handle is None:
+        if self._file_handle is None:
             return False
         return True
 
