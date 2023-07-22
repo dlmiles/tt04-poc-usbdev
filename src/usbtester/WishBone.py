@@ -7,16 +7,14 @@
 
 
 class WishBone():
-    dut = None
-    enable = False
     MAX_CYCLES = 100000
     MIN_ADDRESS = 0x0000
     MAX_ADDRESS = 0xffff
 
     def __init__(self, dut):
         assert(dut is not None)
-        self.dut = dut
-        self.enable = False
+        self._dut = dut
+        self._enable = False
         return None
 
 
@@ -45,21 +43,21 @@ class WishBone():
 
         for i in range(0, cycles):
             while dut.dut.wb_ACK.value == 0:
-                self.dut._log.debug("WB_ACK cycles={} {}".format(i, True))
+                self._dut._log.debug("WB_ACK cycles={} {}".format(i, True))
                 return True
-            await ClockCycle(self.dut.clk, 1)
+            await ClockCycle(self._dut.clk, 1)
 
         if can_raise:
             raise Exception(f"WishBone no wb_ACK received after {cycles} cycles")
         return dut.dut.wb_ACK.value == 1
 
     async def wb_enable(self) -> None:
-        self.dut.wb_CYC.value = 1
-        self.enable = False
+        self._dut.wb_CYC.value = 1
+        self._enable = False
 
     async def wb_disable(self) -> None:
-        self.dut.wb_CYC.value = 0
-        self.enable = False
+        self._dut.wb_CYC.value = 0
+        self._enable = False
 
     async def wb_write(self, addr: int, data: int) -> bool:
         self.check_enable()
@@ -88,21 +86,21 @@ class WishBone():
         self.check_enable()
         addr = self.check_address(addr)
 
-        self.dut.wb_STB.value = 1
-        self.dut.wb_WE.value = 0
-        self.dut.wb_ADR.value = self.addr_to_bus(addr)
+        self._dut.wb_STB.value = 1
+        self._dut.wb_WE.value = 0
+        self._dut.wb_ADR.value = self.addr_to_bus(addr)
 
         # FIXME async this with timeout/iteration limit
         await self.wb_ACK_wait()
         #while dut.dut.wb_ACK.value == 0:
         #    await ClockCycle(dut.clk, 1)
 
-        data = self.dut.wb_DAT_MISO.value
+        data = self._dut.wb_DAT_MISO.value
 
         binstr = data.binstr
         (d32, d0, d1, d2, d3) = retval, BinaryValue(binstr[0:8]), BinaryValue(binstr[8:16]), BinaryValue(binstr[16:24]), BinaryValue(binstr[24:32])
 
-        self.dut.wb_STB.value = 0
+        self._dut.wb_STB.value = 0
 
         if data.is_resolvable:
             dut._log.info("WB_READ  @{} = 0x{:08x}  b{} {} {} {}", self.addr_desc(addr), data, d3, d2, d1, d0)
@@ -126,7 +124,7 @@ class WishBone():
             s3 = chr(d3) if(d3.is_resolvable and chr(d3.integer).isprintable()) else '.'
             data = "0x{:08x}".format(d32.integer) if(d32.is_resolvable) else '0x????????'
             offstr = "@+0x{:04x}".format(offset) if(addr != offset) else ''
-            self.dut._log.info("WB_DUMP  @{}{} = {}  b{} {} {} {}  {}  {}{}{}{}".format(self.addr_desc(addr), offstr, data, d3, d2, d1, d0, d32, s0, s1, s2, s3))
+            self._dut._log.info("WB_DUMP  @{}{} = {}  b{} {} {} {}  {}  {}{}{}{}".format(self.addr_desc(addr), offstr, data, d3, d2, d1, d0, d32, s0, s1, s2, s3))
             left -= 4
             addr += 4
             offset += 4
