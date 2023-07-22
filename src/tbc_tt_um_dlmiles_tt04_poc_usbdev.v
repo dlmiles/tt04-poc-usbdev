@@ -37,11 +37,11 @@ module tb_usbdev (
 
 
     tt_um_dlmiles_tt04_poc_usbdev dut (
-`ifdef GL_TEST
+`ifdef USE_POWER_PINS
         .VPWR     ( 1'b1),
         .VGND     ( 1'b0),
 `endif
-`ifdef GL_TEST_LEGACY
+`ifdef USE_POWER_PINS_LEGACY
         .vccd1    ( 1'b1),
         .vssd1    ( 1'b0),
 `endif
