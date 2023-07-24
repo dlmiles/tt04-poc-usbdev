@@ -42,7 +42,7 @@ jobs:
       pages: write      # to deploy to Pages
       id-token: write   # to verify the deployment originates from an appropriate source
     steps:
-      - uses: TinyTapeout/tt-gds-action/viewer@tt04
+      - uses: dlmiles/tt-gds-action/viewer@tt04
 
 
   gl_test:

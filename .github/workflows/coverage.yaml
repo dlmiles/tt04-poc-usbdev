@@ -39,6 +39,8 @@ jobs:
 
         sudo -E apt-get install -y libffi7
 
+        sudo -E python3 -m pip install coverage
+
         yosys --version
         iverilog -V
         cocotb-config --libpython
@@ -221,6 +223,8 @@ jobs:
             src/*.info
             src/coverage.txt
             src/coverage_html
+            src/htmlcov/*
+            src/.coverage
 
     - name: upload vcd
       if: success() || failure()

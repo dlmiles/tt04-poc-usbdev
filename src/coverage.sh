@@ -33,9 +33,16 @@ fi
 if [ -n "$GITHUB_STEP_SUMMARY" ] && [ -f final.info ]
 then
 	(
-		echo "### $SIM Coverage Report"
+		_GITHUB_PROJECTNAME=$(echo -n "$GITHUB_REPOSITORY" | sed -e 's#.*/##')
+		echo "## $SIM Coverage Report [link](https://${GITHUB_REPOSITORY_OWNER}.github.io/${_GITHUB_PROJECTNAME}/coverage/)"
 		echo ""
-		lcov -l final.info | tail -n +2 | egrep -v "^\[/"
+		lcov -l final.info | ./coverage.pl
 		echo ""
+		echo "-----"
+		echo ""
+		echo "| Tool        | Version |"
+		echo "| :---        | :---    |"
+		echo "| Verilator   | $(verilator --version) |"
+		echo "| cocotb      | $(cocotb-config --version) |"
 	) >> $GITHUB_STEP_SUMMARY
 fi
