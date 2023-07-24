@@ -35,6 +35,18 @@ ifeq ($(SIM),icarus)
 COMPILE_ARGS    += -DTIMING
 endif
 
+ifeq ($(SIM),verilator)
+EXTRA_ARGS += --trace --trace-structs --no-timing
+
+ifeq ($(RANDOM_POLICY),zero)
+PLUSARGS += +verilator+rand+reset+0
+else ifeq ($(RANDOM_POLICY),one)
+PLUSARGS += +verilator+rand+reset+1
+else ifeq ($(RANDOM_POLICY),random)
+PLUSARGS += +verilator+rand+reset+2
+endif
+endif
+
 # TOPLEVEL is the name of the toplevel module in your Verilog or VHDL file
 TOPLEVEL = tb_usbdev
 
