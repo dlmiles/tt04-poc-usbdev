@@ -38,6 +38,10 @@ endif
 ifeq ($(SIM),verilator)
 EXTRA_ARGS += --trace --trace-structs --no-timing
 
+ifeq ($(COVERAGE),yes)
+EXTRA_ARGS += --coverage --coverage-underscore
+endif
+
 ifeq ($(RANDOM_POLICY),zero)
 PLUSARGS += +verilator+rand+reset+0
 else ifeq ($(RANDOM_POLICY),one)

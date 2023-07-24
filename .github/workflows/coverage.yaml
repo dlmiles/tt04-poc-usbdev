@@ -1,0 +1,209 @@
+name: coverage
+# either manually started, or on a schedule
+on: [ push, workflow_dispatch ]
+
+env:
+  SIM:		verilator
+  COVERAGE:	yes
+
+jobs:
+  coverage:
+    # ubuntu
+    runs-on: ubuntu-latest
+    steps:
+    # need the repo checked out
+    - name: checkout repo
+      uses: actions/checkout@v3
+
+    # install oss fpga tools
+    - name: install oss-cad-suite
+      uses: YosysHQ/setup-oss-cad-suite@v2
+      with:
+          python-override: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+    - run: |
+        yosys --version
+        iverilog -V
+        cocotb-config --libpython
+        cocotb-config --python-bin
+        verilator --version
+
+    - name: setup verilator
+      run: |
+        # Needs working native C toolchain and coverage report tools
+        sudo -E apt-get install -y build-essential lcov
+
+        # Just to show how out-of-date these packages maybe
+        apt-cache show verilator || true
+        # Probably does not exist
+        apt-cache show cocotb || true
+
+    - name: patch
+      run: |
+        cd src
+
+        ./check_verilog_timerconsts.sh || true
+
+        echo "### Temporary patch remove before production and signoff"
+        echo "### For local simulation these timers values are 1/200th or 1/25th of the normal wall-clock time"
+        echo "### This patch restores the production values to meet USB specification with a 48MHz PHY clock source"
+
+        ./check_verilog_timerconsts.sh patch quiet
+
+        echo ""
+        echo "### This now validates the values inside verilog are production system values or halts the CI"
+
+        ./check_verilog_timerconsts.sh
+
+    - name: coverage FULL_SPEED zero
+      run: |
+        cd src
+
+        export RANDOM_POLICY=zero
+        export DEBUG=true
+        unset LOW_SPEED
+
+        make clean
+        rm -f results.xml
+
+        make
+        test -f results.xml
+
+        mv results.xml results_zero_fs.xml
+        mv coverage.dat coverage_zero_fs.dat
+        mv tb.vcd tb_zero_fs.vcd
+
+        # make will return success even if the test fails, so check for failure in the results.xml
+        ! grep failure results_zero_fs.xml
+
+    - name: coverage LOW_SPEED zero
+      run: |
+        cd src
+
+        export RANDOM_POLICY=zero
+        export DEBUG=true
+        export LOW_SPEED=true
+
+        make clean
+        rm -f results.xml
+
+        make
+        test -f results.xml
+
+        mv results.xml results_zero_ls.xml
+        mv coverage.dat coverage_zero_ls.dat
+        mv tb.vcd tb_zero_ls.vcd
+
+        # make will return success even if the test fails, so check for failure in the results.xml
+        ! grep failure results_zero_ls.xml
+
+    - name: coverage FULL_SPEED one
+      run: |
+        cd src
+
+        export RANDOM_POLICY=one
+        export DEBUG=true
+        unset LOW_SPEED
+
+        make clean
+        rm -f results.xml
+
+        make
+        test -f results.xml
+
+        mv results.xml results_one_fs.xml
+        mv coverage.dat coverage_one_fs.dat
+        mv tb.vcd tb_one_fs.vcd
+
+        # make will return success even if the test fails, so check for failure in the results.xml
+        ! grep failure results_one_fs.xml
+
+    - name: coverage LOW_SPEED one
+      run: |
+        cd src
+
+        export RANDOM_POLICY=one
+        export DEBUG=true
+        export LOW_SPEED=true
+
+        make clean
+        rm -f results.xml
+
+        make
+        test -f results.xml
+
+        mv results.xml results_one_ls.xml
+        mv coverage.dat coverage_one_ls.dat
+        mv tb.vcd tb_one_ls.vcd
+
+        # make will return success even if the test fails, so check for failure in the results.xml
+        ! grep failure results_one_ls.xml
+
+    - name: coverage FULL_SPEED random
+      run: |
+        cd src
+
+        export RANDOM_POLICY=random
+        export DEBUG=true
+        unset LOW_SPEED
+
+        make clean
+        rm -f results.xml
+
+        make
+        test -f results.xml
+
+        mv results.xml results_random_fs.xml
+        mv coverage.dat coverage_random_fs.dat
+        mv tb.vcd tb_random_fs.vcd
+
+        # make will return success even if the test fails, so check for failure in the results.xml
+        ! grep failure results_random_fs.xml
+
+    - name: coverage LOW_SPEED random
+      run: |
+        cd src
+
+        export RANDOM_POLICY=random
+        export DEBUG=true
+        export LOW_SPEED=true
+
+        make clean
+        rm -f results.xml
+
+        make
+        test -f results.xml
+
+        mv results.xml results_random_ls.xml
+        mv coverage.dat coverage_random_ls.dat
+        mv tb.vcd tb_random_ls.vcd
+
+        # make will return success even if the test fails, so check for failure in the results.xml
+        ! grep failure results_random_ls.xml
+
+    - name: coverage report generation
+      run: |
+        cd src
+
+        ./coverage.sh $SIM 2>&1 | tee coverage.txt
+
+    - name: upload coverage
+      if: success() || failure()
+      uses: actions/upload-artifact@v3
+      with:
+          name: coverage
+          path: |
+            src/*.dat
+            src/*.info
+            src/coverage.txt
+            src/coverage_html
+
+    - name: upload vcd
+      if: success() || failure()
+      uses: actions/upload-artifact@v3
+      with:
+          name: coverage-vcd
+          path: |
+            src/*.vcd
+            src/*.fst
+

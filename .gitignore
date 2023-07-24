@@ -8,6 +8,11 @@ src/__pycache__/
 src/results.xml
 src/user_config.tcl
 
+src/coverage_html*/
+src/coverage*dat
+src/final.dat
+src/final.info
+
 __pycache__/
 *~
 
