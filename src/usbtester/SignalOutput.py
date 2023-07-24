@@ -26,9 +26,10 @@ class SignalOutput():
     DP = '+'
     DM = '-'
 
-    def __init__(self, dut):
+    def __init__(self, dut, SIM_SUPPORTS_X: bool = True):
         assert dut is not None
         self._dut = dut
+        self.SIM_SUPPORTS_X = SIM_SUPPORTS_X
         self._running = False
         self._task = None
 
@@ -76,13 +77,17 @@ class SignalOutput():
             if self._assert_resolvable is not None:
                 if self._assert_resolvable == True:
                     assert     self._signal_dp.value.is_resolvable and     self._signal_dm.value.is_resolvable, f"assert_resolvable={self._assert_resolvable} dp={str(self._signal_dp.value)} dm={str(self._signal_dm.value)} expecting resolvable"
-                if self._assert_resolvable == False:
+                if self._assert_resolvable == False and self.SIM_SUPPORTS_X:
+                    # if SIM_SUPPORTS_X==False can't check
                     assert not self._signal_dp.value.is_resolvable and not self._signal_dm.value.is_resolvable, f"assert_resolvable={self._assert_resolvable} dp={str(self._signal_dp.value)} dm={str(self._signal_dm.value)} expecting not resolvable"
 
             encoded = self.encode_signal(self._signal_dp, self._signal_dm)
 
             if self._assert_encoded is not None:
-                assert self._assert_encoded == encoded, f"assert_encoded={self._assert_encoded} dp={str(self._signal_dp.value)} dm={str(self._signal_dm.value)} got {encoded}"
+                expect = self._assert_encoded
+                if self._assert_encoded == self.X and not self.SIM_SUPPORTS_X:
+                    expect = self.DM	# FIXME is this correct?
+                assert expect == encoded, f"assert_encoded={self._assert_encoded} dp={str(self._signal_dp.value)} dm={str(self._signal_dm.value)} got {encoded}"
 
             is_transition = last_encoded != encoded
 
