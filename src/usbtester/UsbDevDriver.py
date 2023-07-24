@@ -17,11 +17,13 @@ GL_TEST = ('GL_TEST' in os.environ and os.environ['GL_TEST'] != 'false') or ('GA
 
 
 class UsbDevDriver():
-    def __init__(self, dut, bus):
+    # SIM_SUPPORTS_X is True for 4 state simulation supporting 'X' state
+    def __init__(self, dut, bus, SIM_SUPPORTS_X: bool = True):
         assert(dut is not None)
         assert(bus is not None)
         self._dut = dut
         self._bus = bus
+        self.SIM_SUPPORTS_X = SIM_SUPPORTS_X
         return None
 
 
@@ -195,10 +197,12 @@ class UsbDevDriver():
 
         if not GL_TEST:
             assert self._dut.dut.usb_dp_writeEnable == False,               f"self._dut.dut.usb_dp_writeEnable = {str(self._dut.dut.usb_dp_writeEnable.value)}"
-            assert self._dut.dut.usb_dp_write.value.is_resolvable == False, f"self._dut.dut.usb_dp_write = {str(self._dut.dut.usb_dp_write.value)}"
+            if self.SIM_SUPPORTS_X:
+                assert self._dut.dut.usb_dp_write.value.is_resolvable == False, f"self._dut.dut.usb_dp_write = {str(self._dut.dut.usb_dp_write.value)}"
 
             assert self._dut.dut.usb_dm_writeEnable == False, f"self._dut.dut.usb_dm_writeEnable = {str(self._dut.dut.usb_dm_writeEnable.value)}"
-            assert self._dut.dut.usb_dm_write.value.is_resolvable == False,   f"self._dut.dut.usb_dm_write = {str(self._dut.dut.usb_dm_write.value)}"
+            if self.SIM_SUPPORTS_X:
+                assert self._dut.dut.usb_dm_write.value.is_resolvable == False,   f"self._dut.dut.usb_dm_write = {str(self._dut.dut.usb_dm_write.value)}"
 
 
     INTERRUPTS_BITID = 2
