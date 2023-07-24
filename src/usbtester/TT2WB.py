@@ -63,12 +63,6 @@ assert ADR_SHIFTED_MASK == 0x3fff
 
 
 class TT2WB():
-    #_dut = None
-    #_enable = False
-    #_addr = None
-    #_data = None
-    #_need_issue = False
-    #_force_default = False
     UIO_IN_MASK = 0xe0	# bit7..bit5 are input, bit4 output, bit3..bit0 unused
     ADDR_DESC = {
         # Here you can create a dict name for address location to help diagnostics in logs
