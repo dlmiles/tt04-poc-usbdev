@@ -22,6 +22,23 @@ jobs:
           python-override: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
     - run: |
+        [ -e /yosyshq ] || sudo ln -s $RUNNER_TEMP/oss-cad-suite /yosyshq || true
+
+        if [ ! -e /yosyshq ]; then
+          echo "WARNING: Unable to ensure setup of symlink /yosyshq, some things may not work as well as expected.  ln -s  $RUNNER_TEMP/oss-cad-suite /yosyshq" 1>&2
+        fi
+
+        echo "OSS_CAD_SUITE_HOME=$OSS_CAD_SUITE_HOME"
+        test -n "$OSS_CAD_SUITE_HOME" || export OSS_CAD_SUITE_HOME="$RUNNER_TEMP/oss-cad-suite"
+        echo "OSS_CAD_SUITE_HOME=$OSS_CAD_SUITE_HOME"
+        echo "OSS_CAD_SUITE_HOME=$OSS_CAD_SUITE_HOME" >> $GITHUB_ENV
+
+        if [ ! -e "$OSS_CAD_SUITE_HOME" ]; then
+          echo "WARNING: \$OSS_CAD_SUITE_HOME not setup" 1>&2
+        fi
+
+        sudo -E apt-get install -y libffi7
+
         yosys --version
         iverilog -V
         cocotb-config --libpython
@@ -34,9 +51,9 @@ jobs:
         sudo -E apt-get install -y build-essential lcov
 
         # Just to show how out-of-date these packages maybe
-        apt-cache show verilator || true
+        #apt-cache show verilator || true
         # Probably does not exist
-        apt-cache show cocotb || true
+        #apt-cache show cocotb || true
 
     - name: patch
       run: |
@@ -57,6 +74,7 @@ jobs:
 
     - name: coverage FULL_SPEED zero
       run: |
+        source "$OSS_CAD_SUITE_HOME/environment"
         cd src
 
         export RANDOM_POLICY=zero
@@ -78,6 +96,7 @@ jobs:
 
     - name: coverage LOW_SPEED zero
       run: |
+        source "$OSS_CAD_SUITE_HOME/environment"
         cd src
 
         export RANDOM_POLICY=zero
@@ -99,6 +118,7 @@ jobs:
 
     - name: coverage FULL_SPEED one
       run: |
+        source "$OSS_CAD_SUITE_HOME/environment"
         cd src
 
         export RANDOM_POLICY=one
@@ -120,6 +140,7 @@ jobs:
 
     - name: coverage LOW_SPEED one
       run: |
+        source "$OSS_CAD_SUITE_HOME/environment"
         cd src
 
         export RANDOM_POLICY=one
@@ -141,6 +162,7 @@ jobs:
 
     - name: coverage FULL_SPEED random
       run: |
+        source "$OSS_CAD_SUITE_HOME/environment"
         cd src
 
         export RANDOM_POLICY=random
@@ -162,6 +184,7 @@ jobs:
 
     - name: coverage LOW_SPEED random
       run: |
+        source "$OSS_CAD_SUITE_HOME/environment"
         cd src
 
         export RANDOM_POLICY=random
@@ -183,6 +206,7 @@ jobs:
 
     - name: coverage report generation
       run: |
+        source "$OSS_CAD_SUITE_HOME/environment"
         cd src
 
         ./coverage.sh $SIM 2>&1 | tee coverage.txt

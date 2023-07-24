@@ -17,6 +17,23 @@ jobs:
           python-override: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
     - run: | 
+        [ -e /yosyshq ] || sudo ln -s $RUNNER_TEMP/oss-cad-suite /yosyshq || true
+
+        if [ ! -e /yosyshq ]; then
+          echo "WARNING: Unable to ensure setup of symlink /yosyshq, some things may not work as well as expected.  ln -s  $RUNNER_TEMP/oss-cad-suite /yosyshq" 1>&2
+        fi
+
+        echo "OSS_CAD_SUITE_HOME=$OSS_CAD_SUITE_HOME"
+        test -n "$OSS_CAD_SUITE_HOME" || export OSS_CAD_SUITE_HOME="$RUNNER_TEMP/oss-cad-suite"
+        echo "OSS_CAD_SUITE_HOME=$OSS_CAD_SUITE_HOME"
+        echo "OSS_CAD_SUITE_HOME=$OSS_CAD_SUITE_HOME" >> $GITHUB_ENV
+
+        if [ ! -e "$OSS_CAD_SUITE_HOME" ]; then
+          echo "WARNING: \$OSS_CAD_SUITE_HOME not setup" 1>&2
+        fi
+
+        sudo -E apt-get install -y libffi7
+
         yosys --version
         iverilog -V
         cocotb-config --libpython
