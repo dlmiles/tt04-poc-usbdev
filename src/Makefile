@@ -31,6 +31,10 @@ VERILOG_SOURCES += sky130_fd_sc_hd/sky130_fd_sc_hd.v
 VERILOG_SOURCES += $(PWD)/tbc_tt_um_dlmiles_tt04_poc_usbdev.v $(PWD)/gate_level_netlist.v
 endif
 
+ifeq ($(SIM),icarus)
+COMPILE_ARGS    += -DTIMING
+endif
+
 # TOPLEVEL is the name of the toplevel module in your Verilog or VHDL file
 TOPLEVEL = tb_usbdev
 
