@@ -2,21 +2,27 @@
 `timescale 1ns/1ps
 
 module tb_usbdev (
-    input			clk,
-    input			rst_n,
-    input			ena,
+    //input			clk,
+    input			rst_n,	// async
+    //input			ena,
 
     output		[7:0]	uo_out,
-    input		[7:0]	ui_in,
+    //input		[7:0]	ui_in,
 
     output		[7:0]	uio_out,
-    input		[7:0]	uio_in,
+    //input		[7:0]	uio_in,
     output		[7:0]	uio_oe
 );
 `ifndef SYNTHESIS
     reg [(8*32)-1:0] DEBUG;
     reg DEBUG_wire;
 `endif
+
+    reg clk;
+    reg ena;
+
+    reg [7:0] ui_in;
+    reg [7:0] uio_in;
 
     initial begin
         //$dumpfile ("tb_usbdev.vcd");
