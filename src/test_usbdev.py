@@ -329,10 +329,38 @@ def signal_power_change(dut, bf: bool) -> bool:
     return change_bit(dut.uio_in, POWER_BITID, bf)
 
 
+class SimConfig():
+    def __init__(self, dut):
+        sim_name = cocotb.SIM_NAME
+        self._is_iverilog = re.match(r'Icarus Verilog', sim_name, re.IGNORECASE) is not None
+        self._is_verilator = re.match(r'Verilator', sim_name, re.IGNORECASE) is not None
+        self._SIM_SUPPORTS_X = self.is_iverilog
+        dut._log.info("SimConfig(is_iverilog={}, is_verilator={}, SIM_SUPPORTS_X={})".format(
+            self.is_iverilog,
+            self.is_verilator,
+            self.SIM_SUPPORTS_X
+        ))
+        return None
+
+    @property
+    def is_iverilog(self) -> bool:
+        return self._is_iverilog
+
+    @property
+    def is_verilator(self) -> bool:
+        return self._is_verilator
+
+    @property
+    def SIM_SUPPORTS_X(self) -> bool:
+        return self._SIM_SUPPORTS_X
+
+
 FSM = {
     'main':      'dut.usbdev.ctrl.ctrl_logic.main_stateReg_string',
     'active':    'dut.usbdev.ctrl.ctrl_logic.active_stateReg_string',
     'token':     'dut.usbdev.ctrl.ctrl_logic.token_stateReg_string',
+    'dataRx':    'dut.usbdev.ctrl.ctrl_logic.dataRx_stateReg_string',
+    'dataTx':    'dut.usbdev.ctrl.ctrl_logic.dataTx_stateReg_string',
     'rx_packet': 'dut.usbdev.ctrl.phy_logic.rx_packet_stateReg_string',
     'tx_frame':  'dut.usbdev.ctrl.phy_logic.tx_frame_stateReg_string'
 }
@@ -415,6 +443,8 @@ def monitor(dut, signal, prefix: str = None) -> None:
 async def test_usbdev(dut):
     if 'DEBUG' in os.environ and os.environ['DEBUG'] != 'false':
         dut._log.setLevel(cocotb.logging.DEBUG)
+
+    sim_config = SimConfig(dut)
 
     dut._log.info("start")
 
@@ -518,13 +548,17 @@ async def test_usbdev(dut):
 
     await ClockCycles(dut.clk, 6)
     
-
     dut.ena.value = 1
     await ClockCycles(dut.clk, 4)
+    assert dut.ena.value == 1		# validates SIM is behaving as expected
+
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 4)
+    assert dut.rst_n.value == 0
+
     dut.rst_n.value = 1
     await ClockCycles(dut.clk, 4)
+    assert dut.rst_n.value == 1
 
     ele = design_element(dut, 'dut.sim_reset')
     print("GG ele={} {}".format(try_path(ele), try_value(ele)))
@@ -538,13 +572,27 @@ async def test_usbdev(dut):
     debug(dut, '002_TT2WB_COOKED')
     await test_tt2wb_cooked(dut)
 
+    # Verilator VPI hierarchy discovery workaround
+    if sim_config.is_verilator:
+        # Verilator appears to require us to access into the Hierarchy path of items in the form below
+        #  before they can be found with discovery APIs.  It appears we only need to access into the
+        #  containing object, for the signal siblings to also be found.
+        dummy1 = dut.dut.usbdev.ctrl.ctrl_logic.main_stateReg_string			# this is the magic: ctrl_logic
+        assert design_element_exists(dut, fsm_signal_path('main'))
+
+        dummy1 = dut.dut.usbdev.ctrl.phy_logic.rx_packet_stateReg_string		# this is the magic: phy_logic
+        assert design_element_exists(dut, fsm_signal_path('rx_packet'))
+
+        for hierarchy_path in FSM.values():
+            assert design_element_exists(dut, hierarchy_path), f"Verilator signal: {hierarchy_path}"
+
 
     # Start these now as they will fire during USB interface RESET sequence
     # Defered the other FSM monitors setup due to significant simulation slowdown
     signal_accessor_interrupts = SignalAccessor(dut, 'uio_out', INTERRUPTS_BITID)	# dut.usbdev.interrupts
     await cocotb.start(monitor(dut, signal_accessor_interrupts, 'interrupts'))
     if not GL_TEST:
-        await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.main_stateReg_string',      'main'))
+        await cocotb.start(monitor(dut, fsm_signal_path('main'),      'main'))
 
     # This is a custom capture mechanism of the output encoding
     # Goals:
@@ -552,7 +600,7 @@ async def test_usbdev(dut):
     #         confirming period where no output occured
     #         confirm / measure output duration of special conditions
     #
-    SO = SignalOutput(dut)
+    SO = SignalOutput(dut, SIM_SUPPORTS_X = sim_config.SIM_SUPPORTS_X)
     # FIXME check this is attached to the PHY_clk
     signal_accessor_usb_dp_write = SignalAccessor(dut, 'uio_out', DATAPLUS_BITID)	# dut.usb_dp_write
     signal_accessor_usb_dm_write = SignalAccessor(dut, 'uio_out', DATAMINUS_BITID)	# dut.usb_dm_write
@@ -655,7 +703,7 @@ async def test_usbdev(dut):
 
     await ClockCycles(dut.clk, 256)
 
-    driver = UsbDevDriver(dut, ttwb)
+    driver = UsbDevDriver(dut, ttwb, SIM_SUPPORTS_X = sim_config.SIM_SUPPORTS_X)
 
     await driver.poweron()
     await driver.do_config_global_enable(True)
@@ -849,12 +897,14 @@ async def test_usbdev(dut):
 
     ##############################################################################################
 
-    # These were defered so speed up the RESET simulation part
+    # These were deferred so speed up the RESET simulation part
     if not GL_TEST:
-        await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.phy_logic.rx_packet_stateReg_string', 'rx_packet'))
-        await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.phy_logic.tx_frame_stateReg_string',  'tx_frame'))
-        await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.active_stateReg_string',   'active'))
-        await cocotb.start(monitor(dut, 'dut.usbdev.ctrl.ctrl_logic.token_stateReg_string',    'token'))
+        await cocotb.start(monitor(dut, fsm_signal_path('active'),    'active'))
+        await cocotb.start(monitor(dut, fsm_signal_path('token'),     'token'))
+        await cocotb.start(monitor(dut, fsm_signal_path('dataRx'),    'dataRx'))
+        await cocotb.start(monitor(dut, fsm_signal_path('dataTx'),    'dataTx'))
+        await cocotb.start(monitor(dut, fsm_signal_path('rx_packet'), 'rx_packet'))
+        await cocotb.start(monitor(dut, fsm_signal_path('tx_frame'),  'tx_frame'))
     
     ##############################################################################################
 
