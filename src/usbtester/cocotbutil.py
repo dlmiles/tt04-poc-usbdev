@@ -126,7 +126,7 @@ def random_merge_value(value: str, merge: str, merge_char: str = 'x') -> str:
         if ch == merge_char:
             ch = merge[i]
         s += ch
-    print("s={}".format(s))
+    #print("s={}".format(s))
     return s
 
 

@@ -150,6 +150,7 @@ def exclude_re_path(path: str, name: str):
 # Signals we are not interested in enumerating to assign X with value
 ensure_exclude = [
     #r'[\./]_',
+    r'[A-Za-z0-9_\$]_[\./]base[\./][A-Za-z0-9_\$]+$',
     r'[\./]FILLER_',
     r'[\./]PHY_',
     r'[\./]TAP_',
@@ -157,6 +158,8 @@ ensure_exclude = [
     r'[\./]VNB',
     r'[\./]VPB',
     r'[\./]VPWR',
+    r'[\./]DIODE',
+    # sky130 candidates to exclude: CLK CLK_N GATE NOTIFIER RESET SET SLEEP UDP_IN
     r'[\./]pwrgood_',
     r'[\./]ANTENNA_',
     r'[\./]clkbuf_leaf_',
