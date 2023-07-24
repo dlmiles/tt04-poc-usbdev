@@ -127,6 +127,8 @@ module tt_um_dlmiles_tt04_poc_usbdev (
         .usb_dm_write       (usb_dm_write),		//o
         .usb_dm_writeEnable (usb_dm_writeEnable),	//o
         .power              (power),			//i
+        .pullup_dm0         (),                         //o pullup on DM line (when LS active)
+        .pullup_dp1         (),                         //o pullup on DP line (when FS active)
         .interrupts         (interrupts),		//o
         .ctrlCd_clk         (clk),			//i
         .ctrlCd_reset       (rst),			//i
