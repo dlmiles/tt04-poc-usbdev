@@ -25,10 +25,12 @@ class SignalOutput():
     SE0 = '0'
     DP = '+'
     DM = '-'
+    IDLE = 'I'	# special value for assert_encoded_mode(mode=IDLE)
 
-    def __init__(self, dut, SIM_SUPPORTS_X: bool = True):
+    def __init__(self, dut, LOW_SPEED: bool = False, SIM_SUPPORTS_X: bool = True):
         assert dut is not None
         self._dut = dut
+        self.LOW_SPEED = LOW_SPEED
         self.SIM_SUPPORTS_X = SIM_SUPPORTS_X
         self._running = False
         self._task = None
@@ -85,9 +87,13 @@ class SignalOutput():
 
             if self._assert_encoded is not None:
                 expect = self._assert_encoded
+                expect2 = self._assert_encoded
                 if self._assert_encoded == self.X and not self.SIM_SUPPORTS_X:
-                    expect = self.DM	# FIXME is this correct?
-                assert expect == encoded, f"assert_encoded={self._assert_encoded} dp={str(self._signal_dp.value)} dm={str(self._signal_dm.value)} got {encoded}"
+                    expect = self.encoded_mode_for_idle()
+                    #expect = self.DP	# FIXME is this correct?  this is affected by state
+                    #expect2 = self.DM
+                    expect2 = expect
+                assert expect == encoded or expect2 == encoded, f"assert_encoded={self._assert_encoded} dp={str(self._signal_dp.value)} dm={str(self._signal_dm.value)} got {encoded}"
 
             is_transition = last_encoded != encoded
 
@@ -163,9 +169,14 @@ class SignalOutput():
         self._assert_resolvable = mode
         return retval
 
+    def encoded_mode_for_idle(self) -> str:
+        return self.DM if(self.LOW_SPEED) else self.DP
+
     # encoded as in the encoded state of the lines
     def assert_encoded_mode(self, mode: str = None) -> str:
         assert mode is None or type(mode) is str
+        if mode == self.IDLE:
+            mode = self.encoded_mode_for_idle()
         retval = self._assert_encoded
         self._dut._log.info("SignalOutput.assert_encoded_mode({}) = {} (old)".format(mode, retval))
         self._assert_encoded = mode

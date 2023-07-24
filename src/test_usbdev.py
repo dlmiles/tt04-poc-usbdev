@@ -600,7 +600,7 @@ async def test_usbdev(dut):
     #         confirming period where no output occured
     #         confirm / measure output duration of special conditions
     #
-    SO = SignalOutput(dut, SIM_SUPPORTS_X = sim_config.SIM_SUPPORTS_X)
+    SO = SignalOutput(dut, LOW_SPEED = resolve_LOW_SPEED(), SIM_SUPPORTS_X = sim_config.SIM_SUPPORTS_X)
     # FIXME check this is attached to the PHY_clk
     signal_accessor_usb_dp_write = SignalAccessor(dut, 'uio_out', DATAPLUS_BITID)	# dut.usb_dp_write
     signal_accessor_usb_dm_write = SignalAccessor(dut, 'uio_out', DATAMINUS_BITID)	# dut.usb_dm_write
@@ -724,8 +724,11 @@ async def test_usbdev(dut):
         SO.assert_resolvable_mode()	# FIXME disable this for GL_TEST
         SO.assert_encoded_mode()	# FIXME disable this for GL_TEST
     else:
-        SO.assert_resolvable_mode(False)	# x state outputs
-        SO.assert_encoded_mode(SO.X)		# x state outputs (simulation)
+        #SO.assert_resolvable_mode(False)	# x state outputs
+        #SO.assert_encoded_mode(SO.X)		# x state outputs (simulation) default output.write=True
+        # since changing default output.write=True this is now observed
+        SO.assert_resolvable_mode(True)		# x state outputs
+        SO.assert_encoded_mode(SO.DP)		# x state outputs (simulation), at power on FULL_SPEED is set
 
     await ttwb.wb_dump(0x0000, ADDRESS_LENGTH)
     await ttwb.wb_dump(REG_FRAME, 4)
@@ -744,7 +747,8 @@ async def test_usbdev(dut):
 
     PHY_CLK_FACTOR = 4	# 2 per edge
     OVERSAMPLE = 4	# 48MHz / 12MHz
-    TICKS_PER_BIT = PHY_CLK_FACTOR * OVERSAMPLE if(not LOW_SPEED) else PHY_CLK_FACTOR * OVERSAMPLE * 8
+    TICKS_PER_PHY_CLK = PHY_CLK_FACTOR * OVERSAMPLE
+    TICKS_PER_BIT = TICKS_PER_PHY_CLK * 8 if(LOW_SPEED) else TICKS_PER_PHY_CLK
 
     if not GL_TEST:
         # Why are both the WriteEnable high for output at startup ?  With both D+/D- low.  SE0 condx
@@ -758,11 +762,19 @@ async def test_usbdev(dut):
         assert dut.dut.usb_dp_writeEnable.value == 0
 
     if LOW_SPEED:
+        SO.assert_resolvable_mode()		# disable checking as it switches
+        SO.assert_encoded_mode()		# disable checking as it switches
         await ttwb.wb_write(REG_CONFIG, 0x00000040)	# bit6 LOW_SPEED
         # FIXME consider separate control bit for TIP inversion (D+/D-) at this time that is linked
 
     if not GL_TEST:	## Check FSM(main) state currently is ATTACHED
         assert fsm_state_expected(dut, 'main', 'ATTACHED')
+
+    if not GL_TEST:
+        if LOW_SPEED:
+            await ClockCycles(dut.clk, TICKS_PER_PHY_CLK)	# observed 2*PHY_CLK
+        SO.assert_resolvable_mode(True)		# x state outputs
+        SO.assert_encoded_mode(SO.IDLE)		# x state outputs (simulation)
 
 
     v = dut.uio_in.value
@@ -998,13 +1010,16 @@ async def test_usbdev(dut):
         SO.mark_open_at_transition(f"021_SETUP_BITBANG_TX_ACK", -1)
 
         debug(dut, '121_SETUP_BITBANG_TX_ACK')
-        await ClockCycles(dut.clk, TICKS_PER_BIT*23)	# FIXME wait for auto ACK
+        await ClockCycles(dut.clk, TICKS_PER_BIT*25)	# FIXME wait for auto ACK
 
         # FIXME This is how we want this API to work
         SO.mark_close_same_state(TICKS_PER_BIT)
         if not GL_TEST:
-            SO.assert_resolvable_mode(False)	# x state outputs
-            SO.assert_encoded_mode(SO.X)		# x state outputs
+            #SO.assert_resolvable_mode(False)	# x state outputs
+            #SO.assert_encoded_mode(SO.X)		# x state outputs
+            # since changing default output.write=True this is now observed
+            SO.assert_resolvable_mode(True)		# x state outputs
+            SO.assert_encoded_mode(SO.IDLE)		# x state outputs (simulation)
 
         FIXME_GL_TEST_TICKS = int((TICKS_PER_BIT/2)+(TICKS_PER_BIT*7))
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)		## FIXME GL_TEST debug remove me

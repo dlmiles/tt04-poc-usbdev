@@ -197,12 +197,14 @@ class UsbDevDriver():
 
         if not GL_TEST:
             assert self._dut.dut.usb_dp_writeEnable == False,               f"self._dut.dut.usb_dp_writeEnable = {str(self._dut.dut.usb_dp_writeEnable.value)}"
-            if self.SIM_SUPPORTS_X:
-                assert self._dut.dut.usb_dp_write.value.is_resolvable == False, f"self._dut.dut.usb_dp_write = {str(self._dut.dut.usb_dp_write.value)}"
+            #if self.SIM_SUPPORTS_X:
+            #    assert self._dut.dut.usb_dp_write.value.is_resolvable == False, f"self._dut.dut.usb_dp_write = {str(self._dut.dut.usb_dp_write.value)}"
+            assert self._dut.dut.usb_dp_write.value.is_resolvable, f"self._dut.dut.usb_dp_write = {str(self._dut.dut.usb_dp_write.value)}"
 
             assert self._dut.dut.usb_dm_writeEnable == False, f"self._dut.dut.usb_dm_writeEnable = {str(self._dut.dut.usb_dm_writeEnable.value)}"
-            if self.SIM_SUPPORTS_X:
-                assert self._dut.dut.usb_dm_write.value.is_resolvable == False,   f"self._dut.dut.usb_dm_write = {str(self._dut.dut.usb_dm_write.value)}"
+            #if self.SIM_SUPPORTS_X:
+            #    assert self._dut.dut.usb_dm_write.value.is_resolvable == False,   f"self._dut.dut.usb_dm_write = {str(self._dut.dut.usb_dm_write.value)}"
+            assert self._dut.dut.usb_dm_write.value.is_resolvable, f"self._dut.dut.usb_dm_write = {str(self._dut.dut.usb_dm_write.value)}"
 
 
     INTERRUPTS_BITID = 2
