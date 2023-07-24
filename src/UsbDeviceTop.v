@@ -822,10 +822,10 @@ module UsbDevicePhyNative (
   );
   initial begin
   `ifndef SYNTHESIS
-    rx_destuffer_counter = {1{$urandom}};
-    rx_packet_errorTimeout_counter = {1{$urandom}};
-    rx_packet_errorTimeout_p = $urandom;
-    rx_packet_errorTimeout_n = $urandom;
+    rx_destuffer_counter = {3'($urandom)}; //{$urandom}[2:0]; // {1{$urandom}};
+    rx_packet_errorTimeout_counter = {10'($urandom)};
+    rx_packet_errorTimeout_p = {1'($urandom)};
+    rx_packet_errorTimeout_n = {1'($urandom)};
   `endif
   end
 
@@ -2193,8 +2193,8 @@ module UsbDeviceCtrl (
   assign _zz_regs_lowSpeed_1 = 1'b0;
   assign _zz_regs_globalEnable = 1'b1;
   assign _zz_regs_globalEnable_1 = 1'b0;
-  assign _zz_memory_external_readCmd_payload = (io_ctrl_cmd_payload_fragment_address >>> 2'd2);
-  assign _zz_memory_external_writeCmd_payload_address = (io_ctrl_cmd_payload_fragment_address >>> 2'd2);
+  assign _zz_memory_external_readCmd_payload = 14'(io_ctrl_cmd_payload_fragment_address >>> 2'd2); //{(io_ctrl_cmd_payload_fragment_address >>> 2'd2)}[13:0]; // 14'(io_ctrl_cmd_payload_fragment_address >>> 2'd2);
+  assign _zz_memory_external_writeCmd_payload_address = 14'(io_ctrl_cmd_payload_fragment_address >>> 2'd2);
   assign _zz_memory_internal_readCmd_payload = ({2'd0,_zz_memory_internal_readCmd_payload_1} <<< 2'd2);
   assign _zz_memory_internal_readCmd_payload_1 = {1'd0, token_endpoint};
   assign _zz_active_byteSel = desc_offset;
@@ -2850,7 +2850,7 @@ module UsbDeviceCtrl (
             4'b1101, 4'b0001, 4'b1001 : begin
               if(when_UsbDeviceCtrl_l536) begin
                 if(when_UsbDeviceCtrl_l539) begin
-                  memory_internal_readCmd_payload = (_zz_memory_internal_readCmd_payload >>> 2'd2);
+                  memory_internal_readCmd_payload = 5'(_zz_memory_internal_readCmd_payload >>> 2'd2);
                 end
               end
             end
@@ -2862,13 +2862,13 @@ module UsbDeviceCtrl (
       active_enumDef_EP_READ : begin
       end
       active_enumDef_EP_ANALYSE : begin
-        memory_internal_readCmd_payload = (ep_headByte >>> 2'd2);
+        memory_internal_readCmd_payload = 5'(ep_headByte >>> 2'd2);
       end
       active_enumDef_DESC_READ_0 : begin
-        memory_internal_readCmd_payload = ((ep_headByte | 7'h04) >>> 2'd2);
+        memory_internal_readCmd_payload = 5'((ep_headByte | 7'h04) >>> 2'd2);
       end
       active_enumDef_DESC_READ_1 : begin
-        memory_internal_readCmd_payload = ((ep_headByte | 7'h08) >>> 2'd2);
+        memory_internal_readCmd_payload = 5'((ep_headByte | 7'h08) >>> 2'd2);
       end
       active_enumDef_DESC_READ_2 : begin
       end
@@ -2885,7 +2885,7 @@ module UsbDeviceCtrl (
       active_enumDef_DATA_TX_0 : begin
         if(when_UsbDeviceCtrl_l673) begin
           if(dataTx_input_ready) begin
-            memory_internal_readCmd_payload = (desc_currentByte >>> 2'd2);
+            memory_internal_readCmd_payload = 5'(desc_currentByte >>> 2'd2);
           end
         end
       end
@@ -2896,7 +2896,7 @@ module UsbDeviceCtrl (
       active_enumDef_HANDSHAKE_RX_1 : begin
       end
       active_enumDef_UPDATE_SETUP : begin
-        memory_internal_readCmd_payload = ((ep_headByte | 7'h04) >>> 2'd2);
+        memory_internal_readCmd_payload = 5'((ep_headByte | 7'h04) >>> 2'd2);
       end
       active_enumDef_UPDATE_DESC : begin
       end
@@ -2983,7 +2983,7 @@ module UsbDeviceCtrl (
       end
       active_enumDef_DATA_RX : begin
         if(dataRx_data_valid) begin
-          memory_internal_writeCmd_payload_address = (desc_currentByte >>> 2'd2);
+          memory_internal_writeCmd_payload_address = 5'(desc_currentByte >>> 2'd2);
         end
       end
       active_enumDef_DATA_RX_ANALYSE : begin
@@ -5443,8 +5443,8 @@ module BufferCC_2 (
 
   initial begin
   `ifndef SYNTHESIS
-    buffers_0 = $urandom;
-    buffers_1 = $urandom;
+    buffers_0 = {1'($urandom)};
+    buffers_1 = {1'($urandom)};
   `endif
   end
 
@@ -5471,8 +5471,8 @@ module BufferCC (
 
   initial begin
   `ifndef SYNTHESIS
-    buffers_0 = $urandom;
-    buffers_1 = $urandom;
+    buffers_0 = {1'($urandom)};
+    buffers_1 = {1'($urandom)};
   `endif
   end
 
