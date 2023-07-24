@@ -3,7 +3,7 @@
 
 module tb_usbdev (
     //input			clk,
-    input			rst_n,	// async
+    //input			rst_n,	// async (verilator needed reg)
     //input			ena,
 
     output		[7:0]	uo_out,
@@ -19,6 +19,7 @@ module tb_usbdev (
 `endif
 
     reg clk;
+    reg rst_n;
     reg ena;
 
     reg [7:0] ui_in;
