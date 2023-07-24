@@ -36,6 +36,7 @@ COMPILE_ARGS    += -DTIMING
 endif
 
 ifeq ($(SIM),verilator)
+EXTRA_ARGS += -Wno-WIDTHTRUNC
 EXTRA_ARGS += --trace --trace-structs --no-timing
 
 ifeq ($(COVERAGE),yes)
