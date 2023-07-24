@@ -4,10 +4,6 @@
 #
 
 class RomReader():
-    index = -1
-    max_index = -1
-    data = None
-
     def __init__(self, filename):
         fh = open(filename, "r")
         if fh is None:
@@ -16,31 +12,31 @@ class RomReader():
         fh.close()
         
         if data is None:
-            self.index = -1
-            self.max_index = -1
-            self.data = None
+            self._index = -1
+            self._max_index = -1
+            self._data = None
         else:
-            self.max_index = len(data)
-            self.index = 0
-            self.data = data
+            self._max_index = len(data)
+            self._index = 0
+            self._data = data
         
         return None
         
     def max_index(self):
-        return self.max_index
+        return self._max_index
     
     def has_more(self):
-        return self.index < self.max_index
+        return self._index < self._max_index
 
     def next(self):
-        if self.index < self.max_index:
-            next_value = self.data[self.index]
-            self.index += 1
+        if self._index < self._max_index:
+            next_value = self._data[self._index]
+            self._index += 1
             return next_value
         return None
 
     def rewind(self):
-        self.index = 0
+        self._index = 0
         return 0
 
     def parse_hex(self, s):
