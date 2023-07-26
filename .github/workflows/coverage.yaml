@@ -37,8 +37,11 @@ jobs:
           echo "WARNING: \$OSS_CAD_SUITE_HOME not setup" 1>&2
         fi
 
+        # Into system
         sudo -E apt-get install -y libffi7
 
+        # Into oss-cad-suite
+        source "$OSS_CAD_SUITE_HOME/environment"
         sudo -E python3 -m pip install coverage
 
         yosys --version
