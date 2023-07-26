@@ -8,6 +8,9 @@
 #	DEBUG=true	Enable cocotb debug logging level
 #	LOW_SPEED=true	Test hardware in USB LOW_SPEED mode (1.5 Mbps), FULL_SPEED mode is the default
 #			Tests take longer to run as wall-clock time is longer due to slower speed of USB
+#	MONITOR=no-suspend Disables an optimization to suspend the FSM monitors (if active) around parts
+#			of the simulation to speed it up.  Keeping them running is only useful to observe
+#			the timing of when an FSM changes state (if that is important for diagnostics)
 #
 #
 #
@@ -16,6 +19,7 @@ import sys
 import re
 import inspect
 from typing import Any
+from collections import namedtuple
 
 import cocotb
 from cocotb.clock import Clock
@@ -207,6 +211,13 @@ def resolve_GL_TEST():
     if 'GATES' in os.environ and os.environ['GATES'] == 'yes':
         gl_test = True
     return gl_test
+
+
+def resolve_MONITOR_can_suspend():
+    can_suspend = True	# default
+    if 'MONITOR' in os.environ and os.environ['MONITOR'] == 'no-suspend':
+        can_suspend = False
+    return can_suspend
 
 
 def run_this_test(default_value: bool = True) -> bool:
@@ -405,34 +416,116 @@ def fsm_state_expected(dut, label: str, expected: str) -> bool:
 ## FIXME see if we can register multiple items here (to speed up simulation?) :
 ##   signal, prefix/label, lambda on change, lambda on print
 ##  want to have some state changes lookup another signal to print
+## fsm_dict = { 'label'  : 'signal.path.here,
+##              'label2' : SignalAccessor    }
 ## signal: str|SignalAccessor
-@cocotb.coroutine
-def monitor(dut, signal, prefix: str = None) -> None:
-    value = None
+class Monitor():
+    def __init__(self, dut, fsm_dict: dict) -> None:
+        self._dut = dut
 
-    if isinstance(signal, str):
-        signal = SignalAccessor(dut, signal)
-    assert isinstance(signal, SignalAccessor)
-    #signal = design_element(dut, path)
-    #if signal is None:
-    #    raise Exception(f"Unable to find signal path: {path}")
-        
-    pfx = prefix if(prefix) else signal.path
+        self._states = {}
+        self._values = {}
 
-    value = signal.value
-    value_str = str(value)
-    dut._log.info("monitor({}) = {} [STARTED]".format(pfx, fsm_printable(signal.raw)))
+        self.Context = namedtuple('Context', 'prefix signal signal_path')
+        self._running = True
 
-    while True:
-        # in generator-based coroutines triggers are yielded
-        yield ClockCycles(dut.clk, 1)
-        new_value = signal.value
-        new_value_str = str(new_value)
-        if new_value_str != value_str:
+        self._active = True
+
+        if fsm_dict:
+            self.add_and_start(fsm_dict)
+
+        return None
+
+    def add(self, fsm_dict: dict) -> int:
+        assert type(fsm_dict) is dict
+        assert len(fsm_dict) > 0
+
+        count = 0
+        for prefix,signal_or_path in fsm_dict.items():
+            signal = signal_or_path
+            if isinstance(signal, str):
+                signal = SignalAccessor(self._dut, signal)
+            assert isinstance(signal, SignalAccessor)
+            #signal = design_element(self._dut, path)
+            #if signal is None:
+            #    raise Exception(f"Unable to find signal path: {path}")
+
+            prefix = prefix if(prefix) else signal.path
+            ctxt = self.Context(prefix, signal, signal.path)
+            self._states[ctxt.prefix] = ctxt
+            count += 1
+
+        return count
+
+    def start(self) -> int:
+        count = 0
+        # initial state
+        for ctxt in self._states.values():
+            if ctxt.prefix in self._values:
+                continue	# skip already inited
+
+            signal = ctxt.signal
+            new_value = signal.value
+            new_value_str = str(new_value)
             s = fsm_printable(signal.raw)
-            dut._log.info("monitor({}) = {}".format(pfx, s))
-            value = new_value
-            value_str = new_value_str
+            self._dut._log.info("monitor({}) = {} [STARTED]".format(ctxt.prefix, s))
+            self._values[ctxt.prefix] = new_value_str
+            count += 1
+
+        count = 0
+        return count
+
+    def add_and_start(self, fsm_dict: dict) -> int:
+        self.add(fsm_dict)
+        return self.start()
+
+    def shutdown(self) -> None:
+        self._running = False
+        self._active = False
+        self.report('STOPPED')
+
+    def suspend(self) -> None:
+        if self._active and self._running:
+            self._running = False
+            self.report('SUSPEND')
+
+    async def resume(self) -> None:
+        if self._active and not self._running:
+            self._running = True
+            await cocotb.start(self.build_task())
+            self.report('RESUME')
+
+    def report(self, label: str) -> None:
+        for ctxt in self._states.values():
+            signal = ctxt.signal
+            s = fsm_printable(signal.raw)
+            self._dut._log.info("monitor({}) = {} [{}]".format(ctxt.prefix, s, label))
+
+    @cocotb.coroutine
+    def monitor_coroutine(self) -> None:
+        while self._running:
+            if not self._running:
+                break
+
+            for ctxt in self._states.values():
+                old_value_str = self._values.get(ctxt.prefix, None)
+                if not old_value_str:
+                    continue	# not started
+
+                signal = ctxt.signal
+                new_value = signal.value
+                new_value_str = str(new_value)
+                if new_value_str != old_value_str:
+                    s = fsm_printable(signal.raw)
+                    self._dut._log.info("monitor({}) = {}".format(ctxt.prefix, s))
+                    self._values[ctxt.prefix] = new_value_str
+
+            # in generator-based coroutines triggers are yielded
+            yield ClockCycles(self._dut.clk, 1)
+
+
+    def build_task(self) -> cocotb.Task:
+        return cocotb.create_task(self.monitor_coroutine())
 
 
 ## FIXME fix the cocotb timebase for 100MHz and 48MHz (or 192MHz and 48MHz initially - done)
@@ -590,9 +683,11 @@ async def test_usbdev(dut):
     # Start these now as they will fire during USB interface RESET sequence
     # Defered the other FSM monitors setup due to significant simulation slowdown
     signal_accessor_interrupts = SignalAccessor(dut, 'uio_out', INTERRUPTS_BITID)	# dut.usbdev.interrupts
-    await cocotb.start(monitor(dut, signal_accessor_interrupts, 'interrupts'))
+    fsm_monitors = {'interrupts':signal_accessor_interrupts}
     if not GL_TEST:
-        await cocotb.start(monitor(dut, fsm_signal_path('main'),      'main'))
+        fsm_monitors['main'] = fsm_signal_path('main')
+    MONITOR = Monitor(dut, fsm_monitors)
+    await cocotb.start(MONITOR.build_task())
 
     # This is a custom capture mechanism of the output encoding
     # Goals:
@@ -851,6 +946,9 @@ async def test_usbdev(dut):
         ticks = reset_ticks		## FORCE PRODUCTION
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) GL_TEST mode forces PRODUCTION test mode = {}".format(reset_ticks, ticks))
 
+    if resolve_MONITOR_can_suspend():
+        MONITOR.suspend()	# speed up simulation by halting monitor thread
+
     if ticks > 0:
         PER_ITER = 38400
         await clockcycles_with_progress(dut, ticks, PER_ITER,
@@ -859,6 +957,8 @@ async def test_usbdev(dut):
         )
     else:
         dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SKIPPED".format(reset_ticks))
+
+    await MONITOR.resume()
 
     ## FIXME we want to know elapsed when interrupt triggered to confirm it is < tolmin and within a %
     #elapsed_after_factor_for_interrrupt = fsm_interrupt()
@@ -911,13 +1011,15 @@ async def test_usbdev(dut):
 
     # These were deferred so speed up the RESET simulation part
     if not GL_TEST:
-        await cocotb.start(monitor(dut, fsm_signal_path('active'),    'active'))
-        await cocotb.start(monitor(dut, fsm_signal_path('token'),     'token'))
-        await cocotb.start(monitor(dut, fsm_signal_path('dataRx'),    'dataRx'))
-        await cocotb.start(monitor(dut, fsm_signal_path('dataTx'),    'dataTx'))
-        await cocotb.start(monitor(dut, fsm_signal_path('rx_packet'), 'rx_packet'))
-        await cocotb.start(monitor(dut, fsm_signal_path('tx_frame'),  'tx_frame'))
-    
+        MONITOR.add_and_start({
+            'active':    fsm_signal_path('active'),
+            'token':     fsm_signal_path('token'),
+            'dataRx':    fsm_signal_path('dataRx'),
+            'dataTx':    fsm_signal_path('dataTx'),
+            'rx_packet': fsm_signal_path('rx_packet'),
+            'tx_frame':  fsm_signal_path('tx_frame')
+        })
+
     ##############################################################################################
 
     if GL_TEST:		#### FLUSH states through CC
@@ -2813,6 +2915,9 @@ async def test_usbdev(dut):
         (tolmin, tolmax) = usb_spec_wall_clock_tolerance(10000, LOW_SPEED)	# USB host-to-device reset is 10ms
         dut._log.info("USB host-to-device signalling reset specification target is 10000us  min={} max={} after ppm clock tolerance {}".format(tolmin, tolmax, SPEED_MODE))
 
+        if resolve_MONITOR_can_suspend():
+            MONITOR.suspend()	# speed up simulation by halting monitor thread
+
         if ticks > 0:
             PER_ITER = 38400
             await clockcycles_with_progress(dut, ticks, PER_ITER,
@@ -2821,6 +2926,8 @@ async def test_usbdev(dut):
             )
         else:
             dut._log.warning("RESET ticks = {} (for 10ms in SE0 state) SKIPPED".format(reset_ticks))
+
+        await MONITOR.resume()
 
         ## FIXME we want to know elapsed when interrupt triggered to confirm it is < tolmin and within a %
         #elapsed_after_factor_for_interrrupt = fsm_interrupt()
@@ -2936,6 +3043,7 @@ async def test_usbdev(dut):
     await ttwb.wb_dump(REG_CONFIG, 4)
     await ttwb.wb_dump(REG_INFO, 4)
 
+    MONITOR.shutdown()
 
     await ClockCycles(dut.clk, TICKS_PER_BIT*32)
 
