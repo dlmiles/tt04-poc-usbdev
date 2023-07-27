@@ -550,13 +550,13 @@ class Monitor():
 
 
 class TestBenchConfig():
-    MODE_FASTER = 1
-    MODE_EQUAL = 0
-    MODE_SLOWER = -1
+    MODE_FASTER = 0
+    MODE_EQUAL = 1
+    MODE_SLOWER = 2
 
-    PHY_INTERNAL = 1
-    PHY_DIRECT = 0
-    PHY_EXTERNAL = -1
+    PHY_INTERNAL = 0
+    PHY_DIRECT = 1
+    PHY_EXTERNAL = 2
 
     def __init__(self, dut, CLOCK_FREQUENCY: int, PHY_CLOCK_FREQUENCY: int) -> None:
         self._dut = dut
@@ -565,11 +565,11 @@ class TestBenchConfig():
         return None
 
     def is_ctrl_clk(self, kind: int = MODE_EQUAL) -> bool:
-        if kind == self.MODE_EQUAL:
+        if kind & self.MODE_EQUAL:
             return self.CLOCK_FREQUENCY == self.PHY_CLOCK_FREQUENCY
-        if kind == self.MODE_FASTER:
+        if kind & self.MODE_FASTER:
             return self.CLOCK_FREQUENCY > self.PHY_CLOCK_FREQUENCY
-        if kind == self.MODE_SLOWER:
+        if kind & self.MODE_SLOWER:
             return self.CLOCK_FREQUENCY < self.PHY_CLOCK_FREQUENCY
         return False
 
@@ -781,7 +781,7 @@ async def test_usbdev(dut):
     await test_tt2wb_cooked(dut)
 
     # Verilator VPI hierarchy discovery workaround
-    if sim_config.is_verilator:
+    if not GL_TEST and sim_config.is_verilator:
         # Verilator appears to require us to access into the Hierarchy path of items in the form below
         #  before they can be found with discovery APIs.  It appears we only need to access into the
         #  containing object, for the signal siblings to also be found.
@@ -960,10 +960,10 @@ async def test_usbdev(dut):
     TICKS_PER_PHY_CLK = PHY_CLK_FACTOR * OVERSAMPLE
     TICKS_PER_BIT = TICKS_PER_PHY_CLK * 8 if(LOW_SPEED) else TICKS_PER_PHY_CLK
 
-    # Validate verilog config matches testbench expectations
-    assert dut.dut.PHY_CLK_FACTOR.value == PHY_CLK_FACTOR, f"PHY_CLK_FACTOR mismatch {str(dut.dut.PHY_CLK_FACTOR.value)} != {PHY_CLK_FACTOR}"
-
     if not GL_TEST:
+        # Validate verilog config matches testbench expectations
+        assert dut.dut.PHY_CLK_FACTOR.value == PHY_CLK_FACTOR, f"PHY_CLK_FACTOR mismatch {str(dut.dut.PHY_CLK_FACTOR.value)} != {PHY_CLK_FACTOR}"
+
         # Why are both the WriteEnable high for output at startup ?  With both D+/D- low.  SE0 condx
         dut._log.info("{} = {}".format(dut.dut.usb_dm_write._path, str(dut.dut.usb_dm_write.value)))
         dut._log.info("{} = {}".format(dut.dut.usb_dm_writeEnable._path, str(dut.dut.usb_dm_writeEnable.value)))
@@ -981,8 +981,9 @@ async def test_usbdev(dut):
         # FIXME consider separate control bit for TIP inversion (D+/D-) at this time that is linked
 
     if tb_config.is_phy_clk_source_external:
-        # Check module external POWER pin is already asserted (externally hardwired)
-        assert dut.dut.power.value, f"dut.dut.power.value = {str(dut.dut.power.value)}"
+        if not GL_TEST:
+            # Check module external POWER pin is already asserted (externally hardwired)
+            assert dut.dut.power.value, f"dut.dut.power.value = {str(dut.dut.power.value)}"
     else: # power pin is always 1
         # This is based on external input "power" to transition ATTACHED => POWERED
         if not GL_TEST:	## Check FSM(main) state should currently be ATTACHED
@@ -2752,7 +2753,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(REG_FRAME, regrd)	# 12'b0xxxxxxxxxxx
         await usb.send_sof(frame=frame)
         await usb.set_idle()
-        if PHY_CLK_FACTOR <= 1:	# <=48Mhz  48M=1
+        if tb_config.is_ctrl_clk(TestBenchConfig.MODE_EQUAL|TestBenchConfig.MODE_FASTER):	# <=48Mhz  48M=1
             await ClockCycles(dut.clk, 1)
         data = await ttwb.wb_read(REG_FRAME, regrd)
         assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
@@ -2776,7 +2777,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(REG_FRAME, regrd)
         await usb.send_sof(frame=frame)
         await usb.set_idle()
-        if PHY_CLK_FACTOR <= 1:	# <=48Mhz  48M=1
+        if tb_config.is_ctrl_clk(TestBenchConfig.MODE_EQUAL|TestBenchConfig.MODE_FASTER):	# <=48Mhz  48M=1
             await ClockCycles(dut.clk, 1)
         data = await ttwb.wb_read(REG_FRAME, regrd)
         assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
@@ -2800,7 +2801,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(REG_FRAME, regrd)
         await usb.send_sof(frame=frame)
         await usb.set_idle()
-        if PHY_CLK_FACTOR <= 1:	# <=48Mhz  48M=1
+        if tb_config.is_ctrl_clk(TestBenchConfig.MODE_EQUAL|TestBenchConfig.MODE_FASTER):	# <=48Mhz  48M=1
             await ClockCycles(dut.clk, 1)
         data = await ttwb.wb_read(REG_FRAME, regrd)
         assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
@@ -2825,7 +2826,7 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(REG_FRAME, regrd)
         await usb.send_sof(frame=frame)
         await usb.set_idle()
-        if PHY_CLK_FACTOR <= 1:	# <=48Mhz  48M=1
+        if tb_config.is_ctrl_clk(TestBenchConfig.MODE_EQUAL|TestBenchConfig.MODE_FASTER):	# <=48Mhz  48M=1
             await ClockCycles(dut.clk, 1)
         data = await ttwb.wb_read(REG_FRAME, regrd)
         assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
@@ -3115,8 +3116,9 @@ async def test_usbdev(dut):
     run_test_980 = run_this_test(True)
 
     if tb_config.is_phy_clk_source_external:
-        # Check module external POWER pin is already asserted (externally hardwired)
-        assert dut.dut.power.value, f"dut.dut.power.value = {str(dut.dut.power.value)}"
+        if not GL_TEST:
+            # Check module external POWER pin is already asserted (externally hardwired)
+            assert dut.dut.power.value, f"dut.dut.power.value = {str(dut.dut.power.value)}"
         run_test_980 = False	# POWERPIN can not be controlled, always 1
 
     if run_test_980:
@@ -3172,7 +3174,8 @@ async def test_usbdev(dut):
         debug(dut, '982_USB_DISCONNECT_END')
         await ClockCycles(dut.clk, TICKS_PER_BIT*32)
     else:
-        dut._log.warning("980_USB_DISCONNECT SKIPPED: POWER PIN ALWAYS ASSERTED {}".format(str(dut.dut.power.value)))
+        desc = "" if(GL_TEST) else "{}".format(str(dut.dut.power.value))
+        dut._log.warning("980_USB_DISCONNECT SKIPPED: POWER PIN ALWAYS ASSERTED {}".format(desc))
 
 
     debug(dut, '999_DONE')
