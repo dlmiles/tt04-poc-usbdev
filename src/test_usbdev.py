@@ -760,6 +760,16 @@ async def test_usbdev(dut):
     await ClockCycles(dut.clk, 4)
     assert dut.ena.value == 1		# validates SIM is behaving as expected
 
+    # We waggle this to see if it resolves RANDOM_POLICY=random(iverilog)
+    #  where dut.rst_n=0 and dut.dut.rst_n=1 got assigned, need to understand more here
+    #  as I would have expected setting dut.rst_n=anyvalue and letting SIM run would
+    #  have propagated into dut.dut.rst_n.
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 4)
+
+    dut.rst_n.value = 1
+    await ClockCycles(dut.clk, 4)
+
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 4)
     assert dut.rst_n.value == 0
