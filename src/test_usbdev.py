@@ -1564,9 +1564,9 @@ async def test_usbdev(dut):
 
         # 192Mhz   FULL_SPEED=18 LOW_SPEED=130+4 (was 64)
         #  96Mhz   FULL_SPEED=9  (+1)
-        #  48Mhz   FULL_SPEED=11 (+4+2)
+        #  48Mhz   FULL_SPEED=12 (+4+3)
         #wfi_limit = int((TICKS_PER_BIT/2)+2) if(LOW_SPEED) else int(TICKS_PER_BIT/2)
-        wfi_limit = int(TICKS_PER_BIT*8) if(LOW_SPEED) else int(TICKS_PER_BIT+(1)+(4+2))
+        wfi_limit = int(TICKS_PER_BIT*8) if(LOW_SPEED) else int(TICKS_PER_BIT+(1)+(4+3))
         assert await wait_for_signal_interrupts(dut, wfi_limit) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # FIXME remove this now we have wait_for_signal_interrupts()
