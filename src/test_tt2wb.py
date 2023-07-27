@@ -5,6 +5,7 @@
 #
 #
 import os
+import random
 
 import cocotb
 from cocotb.binary import BinaryValue
@@ -144,6 +145,7 @@ async def test_tt2wb_cooked(dut):
 
     await tt2wb.exe_enable()
 
+    #################################################################################
 
     await tt2wb.exe_wbsel(0)		# WBSEL
 
@@ -187,6 +189,9 @@ async def test_tt2wb_cooked(dut):
     if not GL_TEST:
         DO_ASSERT(dut.dut.tt2wb.SEL, 0xf)
 
+    #################################################################################
+
+    await tt2wb.exe_reset()
 
     await ClockCycles(dut.clk, 16)
     #assert False, f"STOP"
@@ -333,12 +338,62 @@ async def test_tt2wb_raw(dut):
     dut.ui_in.value = EXE_ENABLE	# EXE_ENABLE
     await ClockCycles(dut.clk, 1)
 
+    addr = 0xff20		# REG_INFO know return value
+    dut.uio_in.value = CMD_AD1
+    dut.ui_in.value = 0xff	# AD1
+    await ClockCycles(dut.clk, 1)
+    dut.uio_in.value = CMD_AD1
+    dut.ui_in.value = 0x20	# AD0
+    await ClockCycles(dut.clk, 1)
+
     dut.uio_in.value = CMD_EXEC		# EXEC
     dut.ui_in.value = EXE_READ		# EXE_READ
     await ClockCycles(dut.clk, 1)
 
     while not extract_bit(dut.dut.uio_out.value, ACK_BITID):
         await ClockCycles(dut.clk, 1)
+
+    # DI0 use test (these CMD_IDLE insertions are not needed, but validate output hold)
+    do_insert_IDLE = bool(random.getrandbits(1))  # False
+
+    d0 = dut.uo_out.value	# DI0
+    assert d0 == 0x07
+
+    dut.uio_in.value = CMD_DI0
+    await ClockCycles(dut.clk, 1)
+    if do_insert_IDLE:
+        dut.uio_in.value = CMD_IDLE
+        await ClockCycles(dut.clk, 2)
+    else:
+        await ClockCycles(dut.clk, 1)	# pipeline setup
+    d1 = dut.uo_out.value	# DI1
+
+    dut.uio_in.value = CMD_DI0
+    await ClockCycles(dut.clk, 1)
+    if do_insert_IDLE:
+        dut.uio_in.value = CMD_IDLE
+        await ClockCycles(dut.clk, 3)
+    d2 = dut.uo_out.value	# DI2
+
+    dut.uio_in.value = CMD_DI0
+    await ClockCycles(dut.clk, 1)
+    if do_insert_IDLE:
+        dut.uio_in.value = CMD_IDLE
+        await ClockCycles(dut.clk, 4)
+    d3 = dut.uo_out.value	# DI3
+
+    # Don't need to do this, but checking it went back around to d0
+    dut.uio_in.value = CMD_DI0
+    await ClockCycles(dut.clk, 1)
+    if do_insert_IDLE:
+        dut.uio_in.value = CMD_IDLE
+        await ClockCycles(dut.clk, 5)
+    assert dut.uo_out.value == d0, f"{str(dut.uo_out.value)} != {d0} do_insert_IDLE={do_insert_IDLE}"
+
+    d = (d0) | (d1 << 8) | (d2 << 16) | (d3 << 24)
+    dut._log.info("DI0 = {} {} {} {} {:08x} do_insert_IDLE={}".format(d0, d1, d2, d3, d, do_insert_IDLE))
+    # if reg change this will break but its a known value we can validate endian against
+    assert d == 0x30273007, f"REG_INFO = 0x{d:08x} != 0x30273007 do_insert_IDLE={do_insert_IDLE}"
 
     dut.uio_in.value = CMD_EXEC			# EXEC
     dut.ui_in.value = EXE_DISABLE		# EXE_DISABLE
@@ -403,6 +458,109 @@ async def test_tt2wb_raw(dut):
     await ClockCycles(dut.clk, 1)	# clock it one more to see it
     if not GL_TEST:
         DO_ASSERT(dut.dut.tt2wb.SEL, 0xf)
+
+
+    #################################################################################
+    ## Use DO3
+    ##
+
+    dut.uio_in.value = CMD_EXEC		# EXEC
+    dut.ui_in.value = EXE_ENABLE	# EXE_ENABLE
+    await ClockCycles(dut.clk, 1)
+
+    data = 0xcba98765
+    dut.uio_in.value = CMD_DO3
+    dut.ui_in.value = 0xcb	# DO3
+    await ClockCycles(dut.clk, 1)
+    dut.uio_in.value = CMD_DO3
+    dut.ui_in.value = 0xa9	# DO2
+    await ClockCycles(dut.clk, 1)
+    dut.uio_in.value = CMD_DO3
+    dut.ui_in.value = 0x87	# DO1
+    await ClockCycles(dut.clk, 1)
+    dut.uio_in.value = CMD_DO3
+    dut.ui_in.value = 0x65	# DO0
+    await ClockCycles(dut.clk, 1)
+
+    await ClockCycles(dut.clk, 1)	# clock it one more to see it
+    if not GL_TEST:
+        DO_ASSERT(dut.dut.tt2wb.DO, data)
+        DO_ASSERT(dut.dut.tt2wb.wb_DAT_MOSI, data)
+
+
+    dut.uio_in.value = CMD_EXEC		# EXEC
+    dut.ui_in.value = EXE_WRITE		# EXE_WRITE
+    await ClockCycles(dut.clk, 1)
+
+    while not extract_bit(dut.dut.uio_out.value, ACK_BITID):
+        await ClockCycles(dut.clk, 1)
+
+    dut.uio_in.value = CMD_EXEC		# EXEC
+    dut.ui_in.value = EXE_ENABLE	# EXE_ENABLE
+    await ClockCycles(dut.clk, 1)
+
+    addr = 0xff20		# REG_INFO know return value
+    dut.uio_in.value = CMD_AD1
+    dut.ui_in.value = 0xff	# AD1
+    await ClockCycles(dut.clk, 1)
+    dut.uio_in.value = CMD_AD1
+    dut.ui_in.value = 0x20	# AD0
+    await ClockCycles(dut.clk, 1)
+
+    dut.uio_in.value = CMD_EXEC		# EXEC
+    dut.ui_in.value = EXE_READ		# EXE_READ
+    await ClockCycles(dut.clk, 1)
+
+    while not extract_bit(dut.dut.uio_out.value, ACK_BITID):
+        await ClockCycles(dut.clk, 1)
+
+    # DI3 use test (these CMD_IDLE insertions are not needed, but validate output hold)
+    do_insert_IDLE = bool(random.getrandbits(1))  # False
+
+    dut.uio_in.value = CMD_DI3
+    await ClockCycles(dut.clk, 1)
+    if do_insert_IDLE:
+        dut.uio_in.value = CMD_IDLE
+        await ClockCycles(dut.clk, 2)
+    else:
+        await ClockCycles(dut.clk, 1)	# pipeline setup
+    d3 = dut.uo_out.value	# DI3
+
+    dut.uio_in.value = CMD_DI3
+    await ClockCycles(dut.clk, 1)
+    if do_insert_IDLE:
+        dut.uio_in.value = CMD_IDLE
+        await ClockCycles(dut.clk, 3)
+    d2 = dut.uo_out.value	# DI2
+
+    dut.uio_in.value = CMD_DI3
+    await ClockCycles(dut.clk, 1)
+    if do_insert_IDLE:
+        dut.uio_in.value = CMD_IDLE
+        await ClockCycles(dut.clk, 4)
+    d1 = dut.uo_out.value	# DI1
+
+    dut.uio_in.value = CMD_DI3
+    await ClockCycles(dut.clk, 1)
+    if do_insert_IDLE:
+        dut.uio_in.value = CMD_IDLE
+        await ClockCycles(dut.clk, 5)
+    d0 = dut.uo_out.value	# DI0
+
+    d = (d0) | (d1 << 8) | (d2 << 16) | (d3 << 24)
+    dut._log.info("DI3 = {} {} {} {} {:08x} do_insert_IDLE={}".format(d0, d1, d2, d3, d, do_insert_IDLE))
+    # if reg change this will break but its a known value we can validate endian against
+    assert d == 0x30273007, f"REG_INFO = 0x{d:08x} != 0x30273007 do_insert_IDLE={do_insert_IDLE}"
+
+    dut.uio_in.value = CMD_EXEC		# EXEC
+    dut.ui_in.value = EXE_WRITE		# EXE_WRITE
+    await ClockCycles(dut.clk, 1)
+
+    #################################################################################
+
+    dut.uio_in.value = CMD_EXEC			# EXEC
+    dut.ui_in.value = EXE_RESET			# EXE_RESET
+    await ClockCycles(dut.clk, 1)
 
 
     await ClockCycles(dut.clk, 16)

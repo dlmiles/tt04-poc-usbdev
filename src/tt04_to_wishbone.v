@@ -328,7 +328,11 @@ module tt04_to_wishbone #(
                 out8 <= DI[24 +: 8];	// pos=3
                 //pos_next <= 2;
             end
-        end else begin
+        end else if (STB && wb_ACK) begin
+            // mux bypass ?
+            out8 <= wb_DAT_MISO[0 +: 8];
+        end else if (exe_read) begin
+            // Saves issuing CMD_DI0 after EXE (such as EXE_READ)
             out8 <= DI[0 +: 8]; // 8'bxxxxxxxx; debugging
         end
     end
@@ -343,7 +347,7 @@ module tt04_to_wishbone #(
     always @(posedge clk) begin
         if (reset) begin
             cmd_last <= CMD_IDLE;
-        end else begin
+        end else if(!do_idle) begin
             cmd_last <= cmd;
         end
     end
