@@ -21,7 +21,9 @@ jobs:
       with:
           python-override: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
-    - run: |
+
+    - name: prepare oss-cad-suite
+      run: |
         [ -e /yosyshq ] || sudo ln -s $RUNNER_TEMP/oss-cad-suite /yosyshq || true
 
         if [ ! -e /yosyshq ]; then
