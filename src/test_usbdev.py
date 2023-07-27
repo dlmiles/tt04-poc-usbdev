@@ -413,6 +413,27 @@ def fsm_state_expected(dut, label: str, expected: str) -> bool:
     return True
 
 
+async def fsm_state_expected_within(dut, label: str, expected: str, cycles: int = None, can_raise: bool = True) -> bool:
+    assert cycles is None or cycles >= 0
+
+    if cycles is None:
+        cycles = 10000
+
+    for i in range(cycles):
+        state = fsm_state(dut, label)
+        if state == expected:
+            if i > 0:
+                dut._log.info("fsm_state_expected_within({}, expected={}, cycles={}) took {} cycles".format(label, expected, cycles, i))
+            return fsm_state_expected(dut, label, expected)
+        await ClockCycles(dut.clk, 1)
+
+    if can_raise:
+        state = fsm_state(dut, label)
+        raise Exception(f"fsm_state({label}) == {expected} not achieved after {cycles} cycles (current state: {state})")
+
+    return False
+
+
 ## FIXME see if we can register multiple items here (to speed up simulation?) :
 ##   signal, prefix/label, lambda on change, lambda on print
 ##  want to have some state changes lookup another signal to print
@@ -528,6 +549,67 @@ class Monitor():
         return cocotb.create_task(self.monitor_coroutine())
 
 
+class TestBenchConfig():
+    MODE_FASTER = 1
+    MODE_EQUAL = 0
+    MODE_SLOWER = -1
+
+    PHY_INTERNAL = 1
+    PHY_DIRECT = 0
+    PHY_EXTERNAL = -1
+
+    def __init__(self, dut, CLOCK_FREQUENCY: int, PHY_CLOCK_FREQUENCY: int) -> None:
+        self._dut = dut
+        self.CLOCK_FREQUENCY = CLOCK_FREQUENCY
+        self.PHY_CLOCK_FREQUENCY = PHY_CLOCK_FREQUENCY
+        return None
+
+    def is_ctrl_clk(self, kind: int = MODE_EQUAL) -> bool:
+        if kind == self.MODE_EQUAL:
+            return self.CLOCK_FREQUENCY == self.PHY_CLOCK_FREQUENCY
+        if kind == self.MODE_FASTER:
+            return self.CLOCK_FREQUENCY > self.PHY_CLOCK_FREQUENCY
+        if kind == self.MODE_SLOWER:
+            return self.CLOCK_FREQUENCY < self.PHY_CLOCK_FREQUENCY
+        return False
+
+    @property
+    def is_ctrl_clk_equal(self) -> bool:
+        return self.is_ctrl_clk(self.MODE_EQUAL)
+
+    @property
+    def is_ctrl_clk_faster(self) -> bool:
+        return self.is_ctrl_clk(self.MODE_FASTER)
+
+    @property
+    def is_ctrl_clk_slower(self) -> bool:
+        return self.is_ctrl_clk(self.MODE_SLOWER)
+
+    @property
+    def is_phy_clk_source_external(self) -> bool:
+        ## PHY_EXTERNAL = True   uio_in[3] POWERPIN ?
+        ## PHY_INTERNAL = False  clk
+        return True
+
+    @property
+    def is_phy_clk_source_divider(self) -> int:
+        ## PHY_EQUAL
+        ##
+        ## PHY_DIVIDE3EDGES (3 edges possible?) /1.5
+        ## PHY_DIVIDE5EDGES (5 edges possible?) /2.5
+        ## PHY_DIVIDE6EDGES (6 edges possible?) /3
+        ## PHY_DIVIDE7EDGES (7 edges possible?) /3.5
+        ##
+        ## PHY_DIVIDE2 (4 edges) /2
+        ## PHY_DIVIDE4 (8 edges) /4
+        return True
+
+
+    @property
+    def is_phy_clk(self, kind: int = PHY_DIRECT) -> bool:
+        return False
+
+
 ## FIXME fix the cocotb timebase for 100MHz and 48MHz (or 192MHz and 48MHz initially - done)
 ## FIXME add assert to confirm elapsed realtime
 ## FIXME test the ctrl/phy clocks can both be 48MHz, then try slower/faster/much-faster ctrl clocks
@@ -539,17 +621,46 @@ async def test_usbdev(dut):
 
     sim_config = SimConfig(dut)
 
-    dut._log.info("start")
-
     # The DUT uses a divider from the master clock at this time
     # USB spec has a (FS) 2,500ppm and (LS) 15,000ppm timing requirement
     #
     # 192MHz = 5208.333ps  (48MHzx4)  this is 1/15624 out
     #
-    CLOCK = 192000000
-    CLOCK_MHZ = CLOCK / 1000000
-    clock = Clock(dut.clk, 5208, units="ps")	# 5208.3333  192MHz
+    #CLOCK_FREQUENCY = 192000000
+    #CLOCK_FREQUENCY = 144000000
+    #CLOCK_FREQUENCY = 96000000
+    CLOCK_FREQUENCY = 48000000
+    CLOCK_MHZ = CLOCK_FREQUENCY / 1e6
+    CLOCK_PERIOD_PS = int(1 / (CLOCK_FREQUENCY * 1e-12))
+    CLOCK_PERIOD_NS = int(1 / (CLOCK_FREQUENCY * 1e-9))
+    #    5208.3333  192MHz 4:1  PHY_CLK_FACTOR=4
+    #    6944.4444  144Mhz 3:1  PHY_CLK_FACTOR=3
+    #   10416.6667   96MHz 2:1  PHY_CLK_FACTOR=2
+    #   20833.3333   48MHz 1:1  PHY_CLK_FACTOR=1
+    #   31666.6667   24MHz 1:2
+    #   83333.3333   12MHz 1:4 FS
+    #  100000.0000   10MHz 1:4.8
+    #  166666.6667    6Mhz 1:8
+    #  333333.3333    3Mhz 1:16
+    #  666666.6667  1.5Mhz 1:32 LS
+    # 1000000.0000    1Mhz 1:48
+    PHY_CLOCK_FREQUENCY = 48000000
+
+    tb_config = TestBenchConfig(dut, CLOCK_FREQUENCY = CLOCK_FREQUENCY, PHY_CLOCK_FREQUENCY = PHY_CLOCK_FREQUENCY)
+
+    dut._log.info("start")
+
+    #clock = Clock(dut.clk, CLOCK_PERIOD_PS, units="ps")
+    clock = Clock(dut.clk, CLOCK_PERIOD_NS, units="ns")
     cocotb.start_soon(clock.start())
+
+    assert design_element_exists(dut, 'clk')
+
+    if tb_config.is_phy_clk_source_external:
+        assert design_element_exists(dut, 'phy_clk')
+        PHY_CLOCK_PERIOD_PS = 20832	# 48MHz = 20832ps rounded
+        phy_clock = Clock(dut.phy_clk, PHY_CLOCK_PERIOD_PS, units="ps")
+        cocotb.start_soon(phy_clock.start())
 
     dumpvars = ['CI', 'GL_TEST', 'FUNCTIONAL', 'USE_POWER_PINS', 'SIM', 'UNIT_DELAY', 'SIM_BUILD', 'GATES', 'ICARUS_BIN_DIR', 'COCOTB_RESULTS_FILE', 'TESTCASE', 'TOPLEVEL', 'DEBUG', 'LOW_SPEED']
     if 'CI' in os.environ and os.environ['CI'] != 'false':
@@ -700,7 +811,7 @@ async def test_usbdev(dut):
     signal_accessor_usb_dp_write = SignalAccessor(dut, 'uio_out', DATAPLUS_BITID)	# dut.usb_dp_write
     signal_accessor_usb_dm_write = SignalAccessor(dut, 'uio_out', DATAMINUS_BITID)	# dut.usb_dm_write
     await cocotb.start(SO.register('so', signal_accessor_usb_dp_write, signal_accessor_usb_dm_write))
-    # At startup in sumlation we see writeEnable asserted and so output
+    # At startup in simulation we see writeEnable asserted and so output
     SO.assert_resolvable_mode(True)
     SO.assert_encoded_mode(SO.SE0)
 
@@ -840,10 +951,13 @@ async def test_usbdev(dut):
     LOW_SPEED = resolve_LOW_SPEED() # False for FULL_SPEED (default), or True for LOW_SPEED
     SPEED_MODE = 'LOW_SPEED' if(LOW_SPEED) else 'FULL_SPEED'
 
-    PHY_CLK_FACTOR = 4	# 2 per edge
+    PHY_CLK_FACTOR = 1	# 2 per edge
     OVERSAMPLE = 4	# 48MHz / 12MHz
     TICKS_PER_PHY_CLK = PHY_CLK_FACTOR * OVERSAMPLE
     TICKS_PER_BIT = TICKS_PER_PHY_CLK * 8 if(LOW_SPEED) else TICKS_PER_PHY_CLK
+
+    # Validate verilog config matches testbench expectations
+    assert dut.dut.PHY_CLK_FACTOR.value == PHY_CLK_FACTOR, f"PHY_CLK_FACTOR mismatch {str(dut.dut.PHY_CLK_FACTOR.value)} != {PHY_CLK_FACTOR}"
 
     if not GL_TEST:
         # Why are both the WriteEnable high for output at startup ?  With both D+/D- low.  SE0 condx
@@ -862,27 +976,31 @@ async def test_usbdev(dut):
         await ttwb.wb_write(REG_CONFIG, 0x00000040)	# bit6 LOW_SPEED
         # FIXME consider separate control bit for TIP inversion (D+/D-) at this time that is linked
 
-    if not GL_TEST:	## Check FSM(main) state currently is ATTACHED
-        assert fsm_state_expected(dut, 'main', 'ATTACHED')
+    if tb_config.is_phy_clk_source_external:
+        # Check module external POWER pin is already asserted (externally hardwired)
+        assert dut.dut.power.value, f"dut.dut.power.value = {str(dut.dut.power.value)}"
+    else: # power pin is always 1
+        # This is based on external input "power" to transition ATTACHED => POWERED
+        if not GL_TEST:	## Check FSM(main) state should currently be ATTACHED
+            assert await fsm_state_expected_within(dut, 'main', 'ATTACHED')
 
-    if not GL_TEST:
-        if LOW_SPEED:
-            await ClockCycles(dut.clk, TICKS_PER_PHY_CLK)	# observed 2*PHY_CLK
-        SO.assert_resolvable_mode(True)		# x state outputs
-        SO.assert_encoded_mode(SO.IDLE)		# x state outputs (simulation)
+        if not GL_TEST:
+            if LOW_SPEED:
+                await ClockCycles(dut.clk, TICKS_PER_PHY_CLK)	# observed 2*PHY_CLK
+            SO.assert_resolvable_mode(True)		# x state outputs
+            SO.assert_encoded_mode(SO.IDLE)		# x state outputs (simulation)
 
 
-    v = dut.uio_in.value
-    nv = v & ~(1 << POWER_BITID)
-    dut._log.warning("POWER_BITID POWER_BITID={} {} bv={} v={} nv={}".format(POWER_BITID, 1 << POWER_BITID, str(dut.uio_in.value), str(v), str(nv)))
+        v = dut.uio_in.value
+        nv = v & ~(1 << POWER_BITID)
+        dut._log.warning("POWER_BITID POWER_BITID={} {} bv={} v={} nv={}".format(POWER_BITID, 1 << POWER_BITID, str(dut.uio_in.value), str(v), str(nv)))
 
-    # Receiver started for a start writeEnable of DP&DM is set
-    signal_power_change(dut, True)	# POWER uio_in bit3
+        # Receiver started for a start writeEnable of DP&DM is set
+        signal_power_change(dut, True)	# POWER uio_in bit3
 
-    v = dut.uio_in.value
-    nv = v & ~(1 << POWER_BITID)
-    dut._log.warning("POWER_BITID POWER_BITID={} {} bv={} v={} nv={}".format(POWER_BITID, 1 << POWER_BITID, str(dut.uio_in.value), str(v), str(nv)))
-
+        v = dut.uio_in.value
+        nv = v & ~(1 << POWER_BITID)
+        dut._log.warning("POWER_BITID POWER_BITID={} {} bv={} v={} nv={}".format(POWER_BITID, 1 << POWER_BITID, str(dut.uio_in.value), str(v), str(nv)))
 
     await ClockCycles(dut.clk, 4)	# to let FSM update
 
@@ -903,20 +1021,23 @@ async def test_usbdev(dut):
     # So this section detects and confirms how it was built and prevents the wrong values
     #  making it to production.
     #
+    RESET_USEC = 10000
+
     await usb.send_SE0()		# !D+ bit0 !D- bit1 = SE0 RESET
 
     elapsed_start = get_sim_time(units='us')
 
-    reset_ticks = int((48000000 / 100) * PHY_CLK_FACTOR)	# 48MHz for 10ms
+    reset_ticks = int((PHY_CLOCK_FREQUENCY / 100) * PHY_CLK_FACTOR)	# 48MHz for 10ms
 
     # It doesn't matter which timerLong is setup in ther verilog,
     # It only matters we can detected which and know sim_timerLong_factor
     # Then apply FS or LS testing requirements
 
     ## auto-detect and also
-    (tolmin, tolmax) = usb_spec_wall_clock_tolerance(10000, LOW_SPEED)	# USB host-to-device reset is 10ms
-    dut._log.info("USB host-to-device signalling reset specification target is 10000us  min={} max={} after ppm clock tolerance {}".format(tolmin, tolmax, SPEED_MODE))
+    (tolmin, tolmax) = usb_spec_wall_clock_tolerance(RESET_USEC, LOW_SPEED)	# USB host-to-device reset is 10ms
+    dut._log.info("USB host-to-device signalling reset specification target is {}us  min={} max={} after ppm clock tolerance {}".format(RESET_USEC, tolmin, tolmax, SPEED_MODE))
 
+    #sim_speedup = SimSpeedup()
     sim_timerLong_factor = 1
     ##egrep "rx_timerLong_reset =" UsbDeviceTop.v # 23'h07403f ## FULL
     if grep_file('UsbDeviceTop.v', "rx_timerLong_reset =", "2[123]\'h07403f"):
@@ -950,7 +1071,7 @@ async def test_usbdev(dut):
         MONITOR.suspend()	# speed up simulation by halting monitor thread
 
     if ticks > 0:
-        PER_ITER = 38400
+        PER_ITER = int(CLOCK_FREQUENCY / 5000)  # 192M = 38400
         await clockcycles_with_progress(dut, ticks, PER_ITER,
             lambda t: "RESET ticks = {} of {} {:3d}%".format(t, ticks, int((t / ticks) * 100.0)),
             lambda t: "RESET ticks = {} @{}MHz speedup=x{} ({}-per-iteration)".format(ticks, CLOCK_MHZ, sim_timerLong_factor, PER_ITER)
@@ -969,8 +1090,8 @@ async def test_usbdev(dut):
     # We need to trigger our reset detection somewhere close to the minimum (tolmin)
     # But allow the implementation to work and be compatible with a time exceeding maximum (tolmax)
 
-    (tolmin, tolmax) = usb_spec_wall_clock_tolerance(10000, LOW_SPEED)	# USB host-to-device reset is 10ms
-    dut._log.info("ELAPSED = {:7f} x {} = {}us  (USB reset spec is 10000us  min={} max={})".format(elapsed, sim_timerLong_factor, elapsed_after_factor, tolmin, tolmax))
+    (tolmin, tolmax) = usb_spec_wall_clock_tolerance(RESET_USEC, LOW_SPEED)	# USB host-to-device reset is 10ms
+    dut._log.info("ELAPSED = {:7f} x {} = {}us  (USB reset spec is {}us  min={} max={})".format(elapsed, sim_timerLong_factor, elapsed_after_factor, RESET_USEC, tolmin, tolmax))
 
     # FIXME this assert should replace elapsed_after_factor with elapsed_after_factor_for_interrrupt
     #assert elapsed_after_factor < tolmin, f"USB RESET wall-clock elapsed is too short {elapsed_after_factor} > {tolmin}"
@@ -1072,6 +1193,7 @@ async def test_usbdev(dut):
         await ttwb.wb_write(REG_INTERRUPT, reg_interrupt(all=True), regwr)	# UVM=W1C
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
 
+        # 192M=8  96=16
         await ClockCycles(dut.clk, TICKS_PER_BIT*8)	## IDLE
 
         debug(dut, '023_GL_TEST_FLUSH_END')
@@ -1084,7 +1206,7 @@ async def test_usbdev(dut):
         await usb.send_idle()
 
         if not GL_TEST:           ## Check FSM(main) state goes to ACTIVE
-            assert fsm_state_expected(dut, 'main', 'ACTIVE')
+            assert await fsm_state_expected_within(dut, 'main', 'ACTIVE', TICKS_PER_BIT*16)
 
         await test_bitbang_token(dut, usb, token=usb.SETUP)
 
@@ -1436,9 +1558,11 @@ async def test_usbdev(dut):
         await usb.send_crc16_payload(usb.DATA0, Payload.int32(*setup), crc16=0x304f) # explicit crc16
         await usb.set_idle()
 
-        # FULL_SPEED=18 LOW_SPEED=130+4 (was 64)
+        # 192Mhz   FULL_SPEED=18 LOW_SPEED=130+4 (was 64)
+        #  96Mhz   FULL_SPEED=9  (+1)
+        #  48Mhz   FULL_SPEED=11 (+4+2)
         #wfi_limit = int((TICKS_PER_BIT/2)+2) if(LOW_SPEED) else int(TICKS_PER_BIT/2)
-        wfi_limit = int(TICKS_PER_BIT*8) if(LOW_SPEED) else int(TICKS_PER_BIT)
+        wfi_limit = int(TICKS_PER_BIT*8) if(LOW_SPEED) else int(TICKS_PER_BIT+(1)+(4+2))
         assert await wait_for_signal_interrupts(dut, wfi_limit) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # FIXME remove this now we have wait_for_signal_interrupts()
@@ -2624,6 +2748,8 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(REG_FRAME, regrd)	# 12'b0xxxxxxxxxxx
         await usb.send_sof(frame=frame)
         await usb.set_idle()
+        if PHY_CLK_FACTOR <= 1:	# <=48Mhz  48M=1
+            await ClockCycles(dut.clk, 1)
         data = await ttwb.wb_read(REG_FRAME, regrd)
         assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
         assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
@@ -2646,6 +2772,8 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(REG_FRAME, regrd)
         await usb.send_sof(frame=frame)
         await usb.set_idle()
+        if PHY_CLK_FACTOR <= 1:	# <=48Mhz  48M=1
+            await ClockCycles(dut.clk, 1)
         data = await ttwb.wb_read(REG_FRAME, regrd)
         assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
         assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
@@ -2668,6 +2796,8 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(REG_FRAME, regrd)
         await usb.send_sof(frame=frame)
         await usb.set_idle()
+        if PHY_CLK_FACTOR <= 1:	# <=48Mhz  48M=1
+            await ClockCycles(dut.clk, 1)
         data = await ttwb.wb_read(REG_FRAME, regrd)
         assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
         assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
@@ -2691,6 +2821,8 @@ async def test_usbdev(dut):
         data = await ttwb.wb_read(REG_FRAME, regrd)
         await usb.send_sof(frame=frame)
         await usb.set_idle()
+        if PHY_CLK_FACTOR <= 1:	# <=48Mhz  48M=1
+            await ClockCycles(dut.clk, 1)
         data = await ttwb.wb_read(REG_FRAME, regrd)
         assert data & 0x000007ff == frame, f"SOF: frame = 0x{data:04x} is not the expected value 0x{frame:04x}"
         assert data & 0x00000800 != 0, f"SOF: frame = 0x{data:04x} is not the expected value frameValid=1"
@@ -2912,14 +3044,14 @@ async def test_usbdev(dut):
         elapsed_start = get_sim_time(units='us')
 
         ## auto-detect and also
-        (tolmin, tolmax) = usb_spec_wall_clock_tolerance(10000, LOW_SPEED)	# USB host-to-device reset is 10ms
-        dut._log.info("USB host-to-device signalling reset specification target is 10000us  min={} max={} after ppm clock tolerance {}".format(tolmin, tolmax, SPEED_MODE))
+        (tolmin, tolmax) = usb_spec_wall_clock_tolerance(RESET_USEC, LOW_SPEED)	# USB host-to-device reset is 10ms
+        dut._log.info("USB host-to-device signalling reset specification target is {}us  min={} max={} after ppm clock tolerance {}".format(RESET_USEC, tolmin, tolmax, SPEED_MODE))
 
         if resolve_MONITOR_can_suspend():
             MONITOR.suspend()	# speed up simulation by halting monitor thread
 
         if ticks > 0:
-            PER_ITER = 38400
+            PER_ITER = int(CLOCK_FREQUENCY / 5000)  # 192M = 38400
             await clockcycles_with_progress(dut, ticks, PER_ITER,
                 lambda t: "RESET ticks = {} of {} {:3d}%".format(t, ticks, int((t / ticks) * 100.0)),
                 lambda t: "RESET ticks = {} @{}MHz speedup=x{} ({}-per-iteration)".format(ticks, CLOCK_MHZ, sim_timerLong_factor, PER_ITER)
@@ -2938,13 +3070,15 @@ async def test_usbdev(dut):
         # We need to trigger our reset detection somewhere close to the minimum (tolmin)
         # But allow the implementation to work and be compatible with a time exceeding maximum (tolmax)
 
-        (tolmin, tolmax) = usb_spec_wall_clock_tolerance(10000, LOW_SPEED)	# USB host-to-device reset is 10ms
-        dut._log.info("ELAPSED = {:7f} x {} = {}us  (USB reset spec is 10000us  min={} max={})".format(elapsed, sim_timerLong_factor, elapsed_after_factor, tolmin, tolmax))
+        (tolmin, tolmax) = usb_spec_wall_clock_tolerance(RESET_USEC, LOW_SPEED)	# USB host-to-device reset is 10ms
+        dut._log.info("ELAPSED = {:7f} x {} = {}us  (USB reset spec is {}us  min={} max={})".format(elapsed, sim_timerLong_factor, elapsed_after_factor, RESET_USEC, tolmin, tolmax))
 
         debug(dut, '970_USB_RESET_CHECK')
 
         # REG_INTERRUPT also has 0x0001000 set for RESET
-        assert await wait_for_signal_interrupts(dut, 0) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
+        # @48MHz FULL_SPEED=752
+        wfi_limit = 0 if(tb_config.is_ctrl_clk_faster) else 752
+        assert await wait_for_signal_interrupts(dut, wfi_limit) >= 0, f"interrupts = {signal_interrupts(dut)} unexpected state"
         data = await ttwb.wb_read(REG_INTERRUPT, regrd)
         assert data & INTR_RESET != 0, f"REG_INTERRUPT expected to see: RESET bit set"
         await ttwb.wb_write(REG_INTERRUPT, INTR_RESET, regwr)	# W1C
@@ -2974,7 +3108,14 @@ async def test_usbdev(dut):
     #### 980 DISCONNECT detection and interrupt generation
     ####
 
-    if run_this_test(True):
+    run_test_980 = run_this_test(True)
+
+    if tb_config.is_phy_clk_source_external:
+        # Check module external POWER pin is already asserted (externally hardwired)
+        assert dut.dut.power.value, f"dut.dut.power.value = {str(dut.dut.power.value)}"
+        run_test_980 = False	# POWERPIN can not be controlled, always 1
+
+    if run_test_980:
         debug(dut, '980_USB_DISCONNECT')
 
         if not GL_TEST:		# fsm_state's are not visible
@@ -3026,6 +3167,8 @@ async def test_usbdev(dut):
 
         debug(dut, '982_USB_DISCONNECT_END')
         await ClockCycles(dut.clk, TICKS_PER_BIT*32)
+    else:
+        dut._log.warning("980_USB_DISCONNECT SKIPPED: POWER PIN ALWAYS ASSERTED {}".format(str(dut.dut.power.value)))
 
 
     debug(dut, '999_DONE')

@@ -1,0 +1,4 @@
+
+//`define PHY_CLOCK_INTERNAL 1
+//`define PHY_CLOCK_DIRECT 1
+`define PHY_CLOCK_EXTERNAL 1

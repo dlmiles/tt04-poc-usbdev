@@ -1,6 +1,8 @@
 `default_nettype none
 `timescale 1ns/1ps
 
+`include "config.vh"
+
 module tb_usbdev (
     //input			clk,
     //input			rst_n,	// async (verilator needed reg)
@@ -24,6 +26,11 @@ module tb_usbdev (
 
     reg [7:0] ui_in;
     reg [7:0] uio_in;
+
+`ifdef PHY_CLOCK_EXTERNAL
+    reg phy_clk;		// alias for POWERBIT
+    assign uio_in[3] = phy_clk;	// i: power
+`endif
 
     initial begin
         //$dumpfile ("tb_usbdev.vcd");
