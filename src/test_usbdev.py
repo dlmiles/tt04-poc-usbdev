@@ -324,7 +324,7 @@ async def wait_for_signal_interrupts(dut, not_after: int = None, not_before: int
     if not_after is not None:
         # Find out when it would have triggered and report
         tmp = count
-        while not bf and tmp < limit + 1000:
+        while not bf and tmp < limit + 10000:
             tmp += 1
             await ClockCycles(dut.clk, 1)
             bf = signal_interrupts(dut)
@@ -631,7 +631,7 @@ async def test_usbdev(dut):
     #CLOCK_FREQUENCY = 96000000
     CLOCK_FREQUENCY = 48000000
     CLOCK_MHZ = CLOCK_FREQUENCY / 1e6
-    CLOCK_PERIOD_PS = int(1 / (CLOCK_FREQUENCY * 1e-12))
+    CLOCK_PERIOD_PS = int(1 / (CLOCK_FREQUENCY * 1e-12)) - 1
     CLOCK_PERIOD_NS = int(1 / (CLOCK_FREQUENCY * 1e-9))
     #    5208.3333  192MHz 4:1  PHY_CLK_FACTOR=4
     #    6944.4444  144Mhz 3:1  PHY_CLK_FACTOR=3
@@ -650,9 +650,11 @@ async def test_usbdev(dut):
 
     dut._log.info("start")
 
-    #clock = Clock(dut.clk, CLOCK_PERIOD_PS, units="ps")
-    clock = Clock(dut.clk, CLOCK_PERIOD_NS, units="ns")
+    clock = Clock(dut.clk, CLOCK_PERIOD_PS, units="ps")
+    #clock = Clock(dut.clk, CLOCK_PERIOD_NS, units="ns")
     cocotb.start_soon(clock.start())
+    #dut._log.info("CLOCK_PERIOD_NS={}".format(CLOCK_PERIOD_NS))
+    dut._log.info("CLOCK_PERIOD_PS={}".format(CLOCK_PERIOD_PS))
 
     assert design_element_exists(dut, 'clk')
 
@@ -661,6 +663,8 @@ async def test_usbdev(dut):
         PHY_CLOCK_PERIOD_PS = 20832	# 48MHz = 20832ps rounded
         phy_clock = Clock(dut.phy_clk, PHY_CLOCK_PERIOD_PS, units="ps")
         cocotb.start_soon(phy_clock.start())
+        dut._log.info("PHY_CLOCK_PERIOD_PS={}".format(PHY_CLOCK_PERIOD_PS))
+
 
     dumpvars = ['CI', 'GL_TEST', 'FUNCTIONAL', 'USE_POWER_PINS', 'SIM', 'UNIT_DELAY', 'SIM_BUILD', 'GATES', 'ICARUS_BIN_DIR', 'COCOTB_RESULTS_FILE', 'TESTCASE', 'TOPLEVEL', 'DEBUG', 'LOW_SPEED']
     if 'CI' in os.environ and os.environ['CI'] != 'false':
