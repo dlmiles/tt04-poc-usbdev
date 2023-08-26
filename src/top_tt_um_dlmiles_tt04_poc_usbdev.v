@@ -74,17 +74,22 @@ module tt_um_dlmiles_tt04_poc_usbdev (
     assign phyCd_clk = uio_in[3];
 `endif
 
+    wire pullup_dm0;
+    wire pullup_dp1;
+
     wire usb_dp_read;
     wire usb_dp_write;
     wire usb_dp_writeEnable;
-    assign usb_dp_read = uio_in[0];
+    assign usb_dp_read = usb_dp_writeEnable ? pullup_dp1 : uio_in[0];	// ensure mute (to IDLE) of rx when tx
+    //assign usb_dp_read = usb_dp_writeEnable ? usb_dp_write : uio_in[0];   // simulate loopback present
     assign uio_out[0] = usb_dp_write;
     assign uio_oe[0] = usb_dp_writeEnable;	// UIO 0: bidi: Data+
 
     wire usb_dm_read;
     wire usb_dm_write;
     wire usb_dm_writeEnable;
-    assign usb_dm_read = uio_in[1];
+    assign usb_dm_read = usb_dm_writeEnable ? pullup_dm0 : uio_in[1];   // ensure mute (to IDLE) of rx when tx
+    //assign usb_dm_read = usb_dm_writeEnable ? usb_dm_write : uio_in[1];   // simulate loopback present
     assign uio_out[1] = usb_dm_write;
     assign uio_oe[1] = usb_dm_writeEnable;	// UIO 1: bidi: Data-
 
@@ -155,8 +160,8 @@ module tt_um_dlmiles_tt04_poc_usbdev (
         .usb_dm_write       (usb_dm_write),		//o
         .usb_dm_writeEnable (usb_dm_writeEnable),	//o
         .power              (power),			//i
-        .pullup_dm0         (),                         //o pullup on DM line (when LS active)
-        .pullup_dp1         (),                         //o pullup on DP line (when FS active)
+        .pullup_dm0         (pullup_dm0),               //o pullup on DM line (when LS active)
+        .pullup_dp1         (pullup_dp1),               //o pullup on DP line (when FS active)
         .interrupts         (interrupts),		//o
         .ctrlCd_clk         (clk),			//i
         .ctrlCd_reset       (rst),			//i
