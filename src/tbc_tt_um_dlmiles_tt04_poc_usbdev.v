@@ -27,9 +27,15 @@ module tb_usbdev (
     reg [7:0] ui_in;
     reg [7:0] uio_in;
 
+    // Rebuild as wire so we can rename the reg directly for phy_clk
+    wire [7:0] uio_in_wire;
+
 `ifdef PHY_CLOCK_EXTERNAL
     reg phy_clk;		// alias for POWERBIT
-    assign uio_in[3] = phy_clk;	// i: power
+    // uio_in[3] is i: power
+    assign uio_in_wire = {uio_in[7:4], phy_clk, uio_in[2:0]};
+`else
+    assign uio_in_wire = uio_in;
 `endif
 
     initial begin
@@ -66,7 +72,7 @@ module tb_usbdev (
         .uo_out   (uo_out),
         .ui_in    (ui_in),
         .uio_out  (uio_out),
-        .uio_in   (uio_in),
+        .uio_in   (uio_in_wire),
         .uio_oe   (uio_oe)
     );
 
