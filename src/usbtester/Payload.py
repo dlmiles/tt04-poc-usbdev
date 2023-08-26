@@ -72,12 +72,32 @@ class Payload():
         return self.__len__()
 
     def bit_stuff_count(self) -> int:
+        accum = 0
+        last = None
         count = 0.0
+        #xcount = 0.0
         for b in self._data:
-            if b == 0xff:	# FIXME crude!
-                count += 1.25
-        if count > 1.0:
-            count += 1.0	# round up
+            for bid in range(8):
+                bmask = 1 << bid
+                bit = (b & bmask) != 0
+                #print("bit_stuff_count() len={} count={} b={:x} bmask={:x} bit={} last={} accum={}".format(len(self), count, b, bmask, bit, last, accum))
+                if last is None:
+                    last = bit
+                elif bit == last:
+                    accum += 1
+                    if accum >= 6:
+                        count += 1.0
+                        accum = 0
+                else:
+                    accum = 0
+            # This worked well for a while, the accuracy for the testdata used was pretty close
+            #if b == 0xff:	# FIXME crude!
+            #    xcount += 1.25
+            #else:
+            #    xcount += 0.10	# guess factor
+        #if xcount > 1.0:
+        #    xcount += 1.0	# round up
+        #print("bit_stuff_count() len={} count={} xcount={}".format(len(self), count, xcount))
         return int(count)
 
     def equals(self, other: 'Payload') -> bool:
