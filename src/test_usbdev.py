@@ -1919,7 +1919,7 @@ async def test_usbdev(dut):
         ## FIXME observe automatic tx with payload data
         ## FIXME observe payload bytes ? and count ?
         print("payload.bit_stuff_count={} for {}".format(payload.bit_stuff_count(), payload_len))
-        await ClockCycles(dut.clk, TICKS_PER_BIT * (42 + (payload_len*8) + payload.bit_stuff_count()))
+        await ClockCycles(dut.clk, TICKS_PER_BIT * (45 + (payload_len*8) + payload.bit_stuff_count()))
 
         debug(dut, f"{testid+2}{testname}_RX_ACK")
         await usb.send_handshake(usb.ACK)	# host ACKing
