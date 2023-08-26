@@ -80,6 +80,7 @@ module tt_um_dlmiles_tt04_poc_usbdev (
     wire usb_dp_read;
     wire usb_dp_write;
     wire usb_dp_writeEnable;
+    //assign usb_dp_read = uio_in[0];	// direct, production will loopback usb_dp_write
     assign usb_dp_read = usb_dp_writeEnable ? pullup_dp1 : uio_in[0];	// ensure mute (to IDLE) of rx when tx
     //assign usb_dp_read = usb_dp_writeEnable ? usb_dp_write : uio_in[0];   // simulate loopback present
     assign uio_out[0] = usb_dp_write;
@@ -88,6 +89,7 @@ module tt_um_dlmiles_tt04_poc_usbdev (
     wire usb_dm_read;
     wire usb_dm_write;
     wire usb_dm_writeEnable;
+    //assign usb_dm_read = uio_in[1];	// direct, production will loopback usb_dm_write
     assign usb_dm_read = usb_dm_writeEnable ? pullup_dm0 : uio_in[1];   // ensure mute (to IDLE) of rx when tx
     //assign usb_dm_read = usb_dm_writeEnable ? usb_dm_write : uio_in[1];   // simulate loopback present
     assign uio_out[1] = usb_dm_write;
