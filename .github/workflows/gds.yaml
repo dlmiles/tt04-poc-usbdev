@@ -20,7 +20,7 @@ jobs:
           ./check_verilog_timerconsts.sh || true
 
           echo "### Temporary patch remove before production and signoff"
-          echo "### For local simulation these timers values are 1/200th or 1/25th of the normal wall-clock time"
+          echo "### For local simulation these timers values are 1/200th or 1/25th or 1/20th of the normal wall-clock time"
           echo "### This patch restores the production values to meet USB specification with a 48MHz PHY clock source"
 
           ./check_verilog_timerconsts.sh patch quiet
@@ -115,7 +115,7 @@ jobs:
         if ! ./check_verilog_timerconsts.sh
         then
           echo "### Temporary patch remove before production and signoff"
-          echo "### For local simulation these timers values are 1/200th or 1/25th of the normal wall-clock time"
+          echo "### For local simulation these timers values are 1/200th or 1/25th or 1/20th of the normal wall-clock time"
           echo "### This patch restores the production values to meet USB specification with a 48MHz PHY clock source"
 
           ./check_verilog_timerconsts.sh patch quiet
@@ -245,7 +245,7 @@ jobs:
         if ! ./check_verilog_timerconsts.sh
         then
           echo "### Temporary patch remove before production and signoff"
-          echo "### For local simulation these timers values are 1/200th or 1/25th of the normal wall-clock time"
+          echo "### For local simulation these timers values are 1/200th or 1/25th or 1/20th of the normal wall-clock time"
           echo "### This patch restores the production values to meet USB specification with a 48MHz PHY clock source"
 
           ./check_verilog_timerconsts.sh patch quiet
@@ -375,7 +375,7 @@ jobs:
         if ! ./check_verilog_timerconsts.sh
         then
           echo "### Temporary patch remove before production and signoff"
-          echo "### For local simulation these timers values are 1/200th or 1/25th of the normal wall-clock time"
+          echo "### For local simulation these timers values are 1/200th or 1/25th or 1/20th of the normal wall-clock time"
           echo "### This patch restores the production values to meet USB specification with a 48MHz PHY clock source"
 
           ./check_verilog_timerconsts.sh patch quiet
