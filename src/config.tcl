@@ -67,7 +67,7 @@ set ::env(RT_MAX_LAYER) {met4}
 #set ::env(PL_TARGET_DENSITY) 0.75
 # FP_CORE_UTIL=50 is the default (will target 60% max util)
 # FP_CORE_UTIL=60 will adding +10% to default (70% max util)
-set ::env(FP_CORE_UTIL) 60
+set ::env(FP_CORE_UTIL) 65
 
 # 10 is default
 #set ::env(SYNTH_MAX_FANOUT) 7
@@ -76,4 +76,4 @@ set ::env(FP_CORE_UTIL) 60
 #set ::env(CTS_SINK_CLUSTERING_SIZE) 20
 
 # H / W
-set ::env(FP_ASPECT_RATIO) [expr 2/4]
+set ::env(FP_ASPECT_RATIO) [expr 2/2]
