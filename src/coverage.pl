@@ -1,6 +1,9 @@
 #!/usr/bin/perl
 #
-# lcof -l final.info | ./coverage.pl
+# The purpose of this Perl script is to reformat the standard output text from lcov
+# into a pretty form github can render in the HTML action output.
+#
+# lcov -l final.info | ./coverage.pl
 #
 use strict;
 use warnings;

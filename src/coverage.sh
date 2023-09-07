@@ -1,5 +1,8 @@
 #!/bin/bash -e
 #
+# A script to encapsulate the steps to perform project specific coverage generation.
+# Multiple coverage runs are possible and can be aggregated for reporting purposes.
+# See also the GHA custom action in the coverage directory for other parts of the action.
 #
 # Verilator v5.012+ (maybe v5.006+ works, but older is known to have incompatible VPI issues)
 # cocotb 0.9.0-dev
@@ -7,7 +10,7 @@
 #
 # make clean
 # SIM=verilator COVERAGE=yes make
-# ./converage.sh verilator
+# ./coverage.sh verilator
 #
 SIM="$1"
 

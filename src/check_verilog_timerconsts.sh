@@ -1,6 +1,23 @@
 #!/bin/bash
 #
+# The purpose of this script is to provide a check/validation/change of the
+# timer constant values hardwired into the verilog are setup for.
 #
+# These constants need to be a specific value in production for the 48MHz
+# PHY clock.  These values are too large for everyday simulation and testing
+# so reduced figure is used to speed up development simulation.
+#
+# The LOW_SPEED 1/20 represents the fastest speed up possible that will not
+# trigger timer event conditions with any of the test cases.
+#
+# If you are only performing FULL_SPEED testing (not LOW_SPEED) then you can
+# use the 1/200 mode for even faster speedup of resets.  But at this speedup
+# you cannot test LOW_SPEED.
+#
+#
+# If you just run this utility it will report the current mode encoded into
+# the verilog and provide a non-zero exit status if that is not the production
+# values.
 #
 #
 VERILOG_FILE="UsbDeviceTop.v"

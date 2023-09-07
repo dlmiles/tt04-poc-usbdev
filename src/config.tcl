@@ -67,6 +67,7 @@ set ::env(RT_MAX_LAYER) {met4}
 #set ::env(PL_TARGET_DENSITY) 0.75
 # FP_CORE_UTIL=50 is the default (will target 60% max util)
 # FP_CORE_UTIL=60 will adding +10% to default (70% max util)
+# This was necessary to increase for 2x2 squeeze
 set ::env(FP_CORE_UTIL) 65
 
 # 10 is default
