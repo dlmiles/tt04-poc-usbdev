@@ -126,11 +126,11 @@ class UsbDevDriver():
         await self.halt(endp=0)	# HALT EP=0
 
         buf_ep0_desc = BUF_DESC0_20
-        buf_ep0_length = 20
+        buf_ep0_length = 8 # 20 # FIXME this appears to be 12+8 (for 8)
         buf_ep0_eod = buf_ep0_desc + 12 + buf_ep0_length
-        await self._bus.wb_write(buf_ep0_desc+0, 0x000f0000, regwr)	# code=INPROGRESS
-        await self._bus.wb_write(buf_ep0_desc+4, 0x00140000, regwr)	# length=20
-        await self._bus.wb_write(buf_ep0_desc+8, 0x00030000, regwr)	# dir=IN, interrupt=true
+        await self._bus.wb_write(buf_ep0_desc+0, desc0(code=DESC0_INPROGRESS), regwr)
+        await self._bus.wb_write(buf_ep0_desc+4, desc1(length=buf_ep0_length), regwr)
+        await self._bus.wb_write(buf_ep0_desc+8, desc2(direction=DESC2_IN, interrupt=True, completionOnFull=True), regwr)
         await self._bus.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(buf_ep0_desc), max_packet_size=buf_ep0_length), regwr) #
 
         await self.unhalt(endp=0)
@@ -142,12 +142,14 @@ class UsbDevDriver():
         buf_ep1_desc = BUF_DESC0_20 + 12 + 20  # 0x0040
         buf_ep1_length = 8
         buf_ep1_eod = buf_ep1_desc + 12 + buf_ep1_length
-        assert buf_ep1_eod <= BUF_END, f"EP1 configuration puts end-of-data beyond end-of-buffer ({buf_ep1_eod} > {BUF_END})"
-        await self._bus.wb_write(buf_ep1_desc+0, desc0(code=DESC0_INPROGRESS), regwr)
-        await self._bus.wb_write(buf_ep1_desc+4, desc1(length=buf_ep1_length), regwr)  # length=8
-        await self._bus.wb_write(buf_ep1_desc+8, desc2(direction=DESC2_IN, interrupt=True), regwr)  # dir=IN, interrupt=true
-        await self._bus.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(buf_ep1_desc), max_packet_size=buf_ep1_length), regwr) #
-        await self.unhalt(endp=0)
+        if ADDRESS_LENGTH >= buf_ep1_eod:
+            assert buf_ep1_eod <= BUF_END, f"EP1 configuration puts end-of-data beyond end-of-buffer ({buf_ep1_eod} > {BUF_END})"
+            await self._bus.wb_write(buf_ep1_desc+0, desc0(code=DESC0_INPROGRESS), regwr)
+            await self._bus.wb_write(buf_ep1_desc+4, desc1(length=buf_ep1_length), regwr)  # length=8
+            await self._bus.wb_write(buf_ep1_desc+8, desc2(direction=DESC2_IN, interrupt=True), regwr)  # dir=IN, interrupt=true
+            await self._bus.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(buf_ep1_desc), max_packet_size=buf_ep1_length), regwr) #
+
+        await self.unhalt(endp=1)
 
 
         # ENDPOINT#2

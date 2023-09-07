@@ -1283,12 +1283,12 @@ async def test_usbdev(dut):
         assert data & 0xfff00000 == 0x00000000,         f"DESC0.unused expected unused={data:08x}"
         data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
         assert data & 0x0000fff0 == 0x00000000,         f"DESC1.next not as expected {data:08x}"
-        assert data & 0xffff0000 == 20 << 16,           f"DESC1.length not as expected {data:08x}"	# FIXME is this correct?
+        assert data & 0xffff0000 == 8 << 16,            f"DESC1.length not as expected {data:08x}"	# FIXME is this correct?
         assert data & 0x0000000f == 0x00000000,         f"DESC1.unused not as expected {data:08x}"
         data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00010000,         f"DESC2.direction not as expected {data:08x}"
         assert data & 0x00020000 == 0x00020000,         f"DESC2.interrupt not as expected {data:08x}"
-        assert data & 0x00040000 == 0x00000000,         f"DESC2.completion_on_full not as expected {data:08x}"
+        assert data & 0x00040000 == 0x00040000,         f"DESC2.completion_on_full not as expected {data:08x}"
         assert data & 0x00080000 == 0x00000000,         f"DESC2.data1_on_completion not as expected {data:08x}"
         assert data & 0xfff0ffff == 0x00000000,         f"DESC2.unused not as expected {data:08x}"
 
@@ -1301,7 +1301,8 @@ async def test_usbdev(dut):
         assert data & 0x0000fff0 == 0x00000000,         f"ENDP.head not as expected {data:08x}"
         assert data & 0x00010000 == 0x00000000,         f"ENDP.isochronous not as expected {data:08x}"
         mpl = MAX_PACKET_LENGTH << 22
-        mpl = 20 << 22	# 5 = 10100	# FIXME where does this 20 come from ?
+        mpl = 20 << 22	# 5 = 10100	# FIXME where does this 20 come from ? this bug is fixed byteCounter.value 1bit wider
+        mpl = 8 << 22  # it comes from UsbDriver.initalize()
         assert data & 0xffc00000 == mpl,                f"ENDP.max_packet_size not as expected {data:08x}"
         assert data & 0x003e0000 == 0x00000000,         f"ENDP.unused not as expected {data:08x}"
 
@@ -1564,7 +1565,7 @@ async def test_usbdev(dut):
         await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
         await ttwb.wb_write(BUF_DESC1_20, desc1(length=8))
         await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True, completionOnFull=True))
-        await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=20))
+        await ttwb.wb_write(REG_EP0, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), max_packet_size=8))
         await driver.unhalt(endp=ENDPOINT)
 
         await usb.send_token(usb.SETUP, addr=ADDRESS, endp=ENDPOINT, crc5=0x02) # explicit crc5 for a0/ep0
@@ -2557,13 +2558,23 @@ async def test_usbdev(dut):
 
         debug(dut, '700_ISO_OUT')
 
+        # FIXME refactor API for BUF_DESC0_40 and BUF_DESC0_20 selection
+
         await driver.halt(endp=ENDPOINT_ALT) # HALT EP=1
-        await ttwb.wb_write(BUF_DESC0_40, desc0(code=DESC0_INPROGRESS))
-        await ttwb.wb_write(BUF_DESC1_40, desc1(length=8))
-        await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_OUT, interrupt=True, completionOnFull=True))
-        await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), data_phase=expect_data_phase, isochronous=True, max_packet_size=8))
-        await ttwb.wb_write(BUF_DATA0_40, 0x00000000)	# not needed by function, only for testing buffer is filled
-        await ttwb.wb_write(BUF_DATA1_40, 0x00000000)	# not needed by function, only for testing buffer is filled
+        if ADDRESS_LENGTH >= 0x40+8:
+            await ttwb.wb_write(BUF_DESC0_40, desc0(code=DESC0_INPROGRESS))
+            await ttwb.wb_write(BUF_DESC1_40, desc1(length=8))
+            await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_OUT, interrupt=True, completionOnFull=True))
+            await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), data_phase=expect_data_phase, isochronous=True, max_packet_size=8))
+            await ttwb.wb_write(BUF_DATA0_40, 0x00000000)	# not needed by function, only for testing buffer is filled
+            await ttwb.wb_write(BUF_DATA1_40, 0x00000000)	# not needed by function, only for testing buffer is filled
+        else:
+            await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
+            await ttwb.wb_write(BUF_DESC1_20, desc1(length=8))
+            await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_OUT, interrupt=True, completionOnFull=True))
+            await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), data_phase=expect_data_phase, isochronous=True, max_packet_size=8))
+            await ttwb.wb_write(BUF_DATA0_20, 0x00000000)	# not needed by function, only for testing buffer is filled
+            await ttwb.wb_write(BUF_DATA1_20, 0x00000000)	# not needed by function, only for testing buffer is filled
         await driver.unhalt(endp=ENDPOINT_ALT)
 
         isopayload = Payload.int32(0x04030201, 0x08070605) # crc16=0x304f
@@ -2596,15 +2607,24 @@ async def test_usbdev(dut):
         assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # Validate expected descriptor state
-        data = await ttwb.wb_read(BUF_DESC0_40, lambda v,a: desc0_format(v))
+        if ADDRESS_LENGTH >= 0x40+8:
+            data = await ttwb.wb_read(BUF_DESC0_40, lambda v,a: desc0_format(v))
+        else:
+            data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
         assert data & 0x0000ffff == len(isopayload), f"DESC0.offset expected to see: {len(isopayload)} {data:08x}"
         assert data & 0x000f0000 == 0x00000000,      f"DESC0.code expected code={data:08x}"
         assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
-        data = await ttwb.wb_read(BUF_DESC1_40, lambda v,a: desc1_format(v))
+        if ADDRESS_LENGTH >= 0x40+8:
+            data = await ttwb.wb_read(BUF_DESC1_40, lambda v,a: desc1_format(v))
+        else:
+            data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
         assert data & 0x0000fff0 == 0x00000000,      f"DESC1.next not as expected {data:08x}"
         assert data & 0xffff0000 == 0x00080000,      f"DESC1.length not as expected {data:08x}"
         assert data & 0x0000000f == 0x00000000,      f"DESC1.unused not as expected {data:08x}"
-        data = await ttwb.wb_read(BUF_DESC2_40, lambda v,a: desc2_format(v))
+        if ADDRESS_LENGTH >= 0x40+8:
+            data = await ttwb.wb_read(BUF_DESC2_40, lambda v,a: desc2_format(v))
+        else:
+            data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00000000,      f"DESC2.direction not as expected {data:08x}"
         assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
         assert data & 0x00040000 == 0x00040000,      f"DESC2.completion_on_full not as expected {data:08x}"
@@ -2626,9 +2646,15 @@ async def test_usbdev(dut):
         assert data & 0x003e0000 == 0x00000000,      f"ENDP.unused not as expected {data:08x}"
 
         # Validate 8 bytes of OUT payload made it into the buffer location
-        data = await ttwb.wb_read(BUF_DATA0_40)
+        if ADDRESS_LENGTH >= 0x40+8:
+            data = await ttwb.wb_read(BUF_DATA0_40)
+        else:
+            data = await ttwb.wb_read(BUF_DATA0_20)
         assert data == isopayload.getitem32(0), f"PAYLOAD0 expected to see: payload+0 0x{isopayload.getitem32(0):08x} is 0x{data:08x}"
-        data = await ttwb.wb_read(BUF_DATA1_40)
+        if ADDRESS_LENGTH >= 0x40+8:
+            data = await ttwb.wb_read(BUF_DATA1_40)
+        else:
+            data = await ttwb.wb_read(BUF_DATA1_20)
         assert data == isopayload.getitem32(1), f"PAYLOAD1 expected to see: payload+4 0x{isopayload.getitem32(1):08x} is 0x{data:08x}"
 
 
@@ -2654,15 +2680,26 @@ async def test_usbdev(dut):
         debug(dut, '750_ISO_IN')
 
         await driver.halt(endp=ENDPOINT_ALT) # HALT EP=1
-        await ttwb.wb_write(BUF_DESC0_40, desc0(code=DESC0_INPROGRESS))
-        await ttwb.wb_write(BUF_DESC1_40, desc1(length=8))
-        await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_IN, interrupt=True, completionOnFull=True))
-        await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), data_phase=device_data_phase, isochronous=True, max_packet_size=8))
-        isopayload = Payload.int32(0xff0201ff, 0x0055aa00)
-        assert isopayload.getitem32(0) == 0xff0201ff
-        assert isopayload.getitem32(1) == 0x0055aa00	# confirm API is working
-        await ttwb.wb_write(BUF_DATA0_40, isopayload.getitem32(0))
-        await ttwb.wb_write(BUF_DATA1_40, isopayload.getitem32(1))
+        if ADDRESS_LENGTH >= 0x40+8:
+            await ttwb.wb_write(BUF_DESC0_40, desc0(code=DESC0_INPROGRESS))
+            await ttwb.wb_write(BUF_DESC1_40, desc1(length=8))
+            await ttwb.wb_write(BUF_DESC2_40, desc2(direction=DESC2_IN, interrupt=True, completionOnFull=True))
+            await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_40), data_phase=device_data_phase, isochronous=True, max_packet_size=8))
+            isopayload = Payload.int32(0xff0201ff, 0x0055aa00)
+            assert isopayload.getitem32(0) == 0xff0201ff
+            assert isopayload.getitem32(1) == 0x0055aa00	# confirm API is working
+            await ttwb.wb_write(BUF_DATA0_40, isopayload.getitem32(0))
+            await ttwb.wb_write(BUF_DATA1_40, isopayload.getitem32(1))
+        else:
+            await ttwb.wb_write(BUF_DESC0_20, desc0(code=DESC0_INPROGRESS))
+            await ttwb.wb_write(BUF_DESC1_20, desc1(length=8))
+            await ttwb.wb_write(BUF_DESC2_20, desc2(direction=DESC2_IN, interrupt=True, completionOnFull=True))
+            await ttwb.wb_write(REG_EP1, reg_endp(enable=True, head=addr_to_head(BUF_DESC0_20), data_phase=device_data_phase, isochronous=True, max_packet_size=8))
+            isopayload = Payload.int32(0xff0201ff, 0x0055aa00)
+            assert isopayload.getitem32(0) == 0xff0201ff
+            assert isopayload.getitem32(1) == 0x0055aa00	# confirm API is working
+            await ttwb.wb_write(BUF_DATA0_20, isopayload.getitem32(0))
+            await ttwb.wb_write(BUF_DATA1_20, isopayload.getitem32(1))
         await driver.unhalt(endp=ENDPOINT_ALT)
 
         await usb.send_token(usb.IN, addr=ADDRESS, endp=ENDPOINT_ALT)
@@ -2697,15 +2734,24 @@ async def test_usbdev(dut):
         assert signal_interrupts(dut) == False, f"interrupts = {signal_interrupts(dut)} unexpected state"
 
         # Validate expected descriptor state
-        data = await ttwb.wb_read(BUF_DESC0_40, lambda v,a: desc0_format(v))
+        if ADDRESS_LENGTH >= 0x40+8:
+            data = await ttwb.wb_read(BUF_DESC0_40, lambda v,a: desc0_format(v))
+        else:
+            data = await ttwb.wb_read(BUF_DESC0_20, lambda v,a: desc0_format(v))
         assert data & 0x0000ffff == len(isopayload), f"DESC0.offset expected to see: {len(isopayload)} {data:08x}"
         assert data & 0x000f0000 == 0x00000000,      f"DESC0.code expected code={data:08x}"
         assert data & 0xfff00000 == 0x00000000,      f"DESC0.unused expected unused={data:08x}"
-        data = await ttwb.wb_read(BUF_DESC1_40, lambda v,a: desc1_format(v))
+        if ADDRESS_LENGTH >= 0x40+8:
+            data = await ttwb.wb_read(BUF_DESC1_40, lambda v,a: desc1_format(v))
+        else:
+            data = await ttwb.wb_read(BUF_DESC1_20, lambda v,a: desc1_format(v))
         assert data & 0x0000fff0 == 0x00000000,      f"DESC1.next not as expected {data:08x}"
         assert data & 0xffff0000 == 0x00080000,      f"DESC1.length not as expected {data:08x}"
         assert data & 0x0000000f == 0x00000000,      f"DESC1.unused not as expected {data:08x}"
-        data = await ttwb.wb_read(BUF_DESC2_40, lambda v,a: desc2_format(v))
+        if ADDRESS_LENGTH >= 0x40+8:
+            data = await ttwb.wb_read(BUF_DESC2_40, lambda v,a: desc2_format(v))
+        else:
+            data = await ttwb.wb_read(BUF_DESC2_20, lambda v,a: desc2_format(v))
         assert data & 0x00010000 == 0x00010000,      f"DESC2.direction not as expected {data:08x}"
         assert data & 0x00020000 == 0x00020000,      f"DESC2.interrupt not as expected {data:08x}"
         assert data & 0x00040000 == 0x00040000,      f"DESC2.completion_on_full not as expected {data:08x}"
@@ -2726,9 +2772,15 @@ async def test_usbdev(dut):
         assert data & 0x003e0000 == 0x00000000,      f"ENDP.unused not as expected {data:08x}"
 
         # Validate 8 bytes of OUT payload made it into the buffer location
-        data = await ttwb.wb_read(BUF_DATA0_40)
+        if ADDRESS_LENGTH >= 0x40+8:
+            data = await ttwb.wb_read(BUF_DATA0_40)
+        else:
+            data = await ttwb.wb_read(BUF_DATA0_20)
         assert data == isopayload.getitem32(0), f"PAYLOAD0 expected to see: payload+0 0x{isopayload.getitem32(0):08x} is 0x{data:08x}"
-        data = await ttwb.wb_read(BUF_DATA1_40)
+        if ADDRESS_LENGTH >= 0x40+8:
+            data = await ttwb.wb_read(BUF_DATA1_40)
+        else:
+            data = await ttwb.wb_read(BUF_DATA1_20)
         assert data == isopayload.getitem32(1), f"PAYLOAD1 expected to see: payload+4 0x{isopayload.getitem32(1):08x} is 0x{data:08x}"
 
 
