@@ -2013,7 +2013,7 @@ module UsbDeviceCtrl (
   wire                ep_nack;
   wire                ep_dataPhase;
   wire                ep_isochronous;
-  wire       [2:0]    ep_maxPacketSize;
+  wire       [3:0]    ep_maxPacketSize;
   wire       [5:0]    ep_headByte;
   reg        [31:0]   desc_words_0;
   reg        [31:0]   desc_words_1;
@@ -2034,7 +2034,7 @@ module UsbDeviceCtrl (
   wire       [5:0]    desc_currentByte;
   wire                desc_full;
   wire                desc_dataPhaseMatch;
-  reg        [2:0]    byteCounter_value;
+  reg        [3:0]    byteCounter_value;
   reg                 byteCounter_clear;
   reg                 byteCounter_increment;
   wire                byteCounter_full;
@@ -3815,7 +3815,7 @@ module UsbDeviceCtrl (
   assign ep_nack = ep_word[2];
   assign ep_dataPhase = ep_word[3];
   assign ep_isochronous = ep_word[16];
-  assign ep_maxPacketSize = ep_word[24 : 22];
+  assign ep_maxPacketSize = ep_word[25 : 22];
   assign ep_headByte = ({4'd0,ep_head} <<< 3'd4);
   assign desc_offset = desc_words_0[6 : 0];
   assign desc_code = desc_words_0[19 : 16];
@@ -5060,10 +5060,10 @@ module UsbDeviceCtrl (
       desc_words_0[6 : 0] <= _zz_desc_words_0;
     end
     if(byteCounter_increment) begin
-      byteCounter_value <= (byteCounter_value + 3'b001);
+      byteCounter_value <= (byteCounter_value + 4'b0001);
     end
     if(byteCounter_clear) begin
-      byteCounter_value <= 3'b000;
+      byteCounter_value <= 4'b0000;
     end
     if(memory_external_readRsp_valid) begin
       mapping_readBuffer <= memory_external_readRsp_payload;
