@@ -2013,7 +2013,7 @@ module UsbDeviceCtrl (
   wire                ep_nack;
   wire                ep_dataPhase;
   wire                ep_isochronous;
-  wire       [5:0]    ep_maxPacketSize;
+  wire       [6:0]    ep_maxPacketSize;
   wire       [6:0]    ep_headByte;
   reg        [31:0]   desc_words_0;
   reg        [31:0]   desc_words_1;
@@ -2034,7 +2034,7 @@ module UsbDeviceCtrl (
   wire       [6:0]    desc_currentByte;
   wire                desc_full;
   wire                desc_dataPhaseMatch;
-  reg        [5:0]    byteCounter_value;
+  reg        [6:0]    byteCounter_value;
   reg                 byteCounter_clear;
   reg                 byteCounter_increment;
   wire                byteCounter_full;
@@ -2167,10 +2167,10 @@ module UsbDeviceCtrl (
   reg [87:0] main_stateNext_string;
   `endif
 
-  reg [7:0] memory_ram_symbol0 [0:25];
-  reg [7:0] memory_ram_symbol1 [0:25];
-  reg [7:0] memory_ram_symbol2 [0:25];
-  reg [7:0] memory_ram_symbol3 [0:25];
+  reg [7:0] memory_ram_symbol0 [0:27];
+  reg [7:0] memory_ram_symbol1 [0:27];
+  reg [7:0] memory_ram_symbol2 [0:27];
+  reg [7:0] memory_ram_symbol3 [0:27];
   reg [7:0] _zz_memory_ramsymbol_read;
   reg [7:0] _zz_memory_ramsymbol_read_1;
   reg [7:0] _zz_memory_ramsymbol_read_2;
@@ -2180,7 +2180,7 @@ module UsbDeviceCtrl (
       zz__zz_ctrl_rsp_payload_fragment_data_1[7 : 0] = 8'h07;
       zz__zz_ctrl_rsp_payload_fragment_data_1[11 : 8] = 4'b0000;
       zz__zz_ctrl_rsp_payload_fragment_data_1[15 : 12] = 4'b0011;
-      zz__zz_ctrl_rsp_payload_fragment_data_1[24 : 16] = 9'h03b;
+      zz__zz_ctrl_rsp_payload_fragment_data_1[24 : 16] = 9'h03f;
       zz__zz_ctrl_rsp_payload_fragment_data_1[26 : 25] = 2'b00;
       zz__zz_ctrl_rsp_payload_fragment_data_1[31 : 27] = 5'h06;
     end
@@ -3815,7 +3815,7 @@ module UsbDeviceCtrl (
   assign ep_nack = ep_word[2];
   assign ep_dataPhase = ep_word[3];
   assign ep_isochronous = ep_word[16];
-  assign ep_maxPacketSize = ep_word[27 : 22];
+  assign ep_maxPacketSize = ep_word[28 : 22];
   assign ep_headByte = ({4'd0,ep_head} <<< 3'd4);
   assign desc_offset = desc_words_0[7 : 0];
   assign desc_code = desc_words_0[19 : 16];
@@ -5060,10 +5060,10 @@ module UsbDeviceCtrl (
       desc_words_0[7 : 0] <= _zz_desc_words_0;
     end
     if(byteCounter_increment) begin
-      byteCounter_value <= (byteCounter_value + 6'h01);
+      byteCounter_value <= (byteCounter_value + 7'h01);
     end
     if(byteCounter_clear) begin
-      byteCounter_value <= 6'h00;
+      byteCounter_value <= 7'h00;
     end
     if(memory_external_readRsp_valid) begin
       mapping_readBuffer <= memory_external_readRsp_payload;
