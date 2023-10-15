@@ -20,7 +20,7 @@ jobs:
     #if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: publish
-        uses: dlmiles/tt-gds-action/publish@tt04
+        uses: dlmiles/tt-gds-action/publish@tt05
         with:
           # Need to explicitly pass as input.token into composite action
           token: ${{ secrets.GITHUB_TOKEN }}

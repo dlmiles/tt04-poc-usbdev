@@ -31,8 +31,8 @@ jobs:
           ./check_verilog_timerconsts.sh
 
       - name: Build GDS
-        uses: dlmiles/tt-gds-action@tt04
-        #uses: TinyTapeout/tt-gds-action@tt04
+        uses: dlmiles/tt-gds-action@tt05
+        #uses: TinyTapeout/tt-gds-action@tt05
 
 
   viewer:
@@ -42,7 +42,7 @@ jobs:
       pages: write      # to deploy to Pages
       id-token: write   # to verify the deployment originates from an appropriate source
     steps:
-      - uses: dlmiles/tt-gds-action/viewer@tt04
+      - uses: dlmiles/tt-gds-action/viewer@tt05
 
 
   gl_test:
@@ -55,10 +55,24 @@ jobs:
           submodules: recursive
 
       - name: GL test
-        #uses: TinyTapeout/tt-gds-action/gl_test@tt04
-        uses: dlmiles/tt-gds-action/gl_test@tt04
+        #uses: TinyTapeout/tt-gds-action/gl_test@tt05
+        uses: dlmiles/tt-gds-action/gl_test@tt05
         with:
           RANDOM_POLICY:	random
+
+
+  eqy_test:
+    needs: gds
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: eqy test
+        #uses: TinyTapeout/tt-gds-action/eqy_test@tt05
+        uses: dlmiles/tt-gds-action/eqy_test@tt05
 
 
 ##############################################################
