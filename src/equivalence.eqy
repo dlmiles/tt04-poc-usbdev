@@ -10,9 +10,9 @@ read_verilog -sv UsbDeviceTop.v tt04_to_wishbone.v top_tt_um_dlmiles_tt04_poc_us
 exec -- python3 formal_pdk_proc.py primitives.v sky130_fd_sc_hd.v -o formal_pdk.v
 read -sv formal_pdk.v gate_level_netlist.v
 
-# TOPLABEL=tt_um_usbdev
+# TOPMODULE=tt_um_dlmiles_tt04_poc_usbdev
 [script]
-hierarchy -check -top tt_um_usbdev
+hierarchy -check -top tt_um_dlmiles_tt04_poc_usbdev
 prep
 memory_map -formal
 
