@@ -394,6 +394,8 @@ async def test_tt2wb_raw(dut):
     d = (d0) | (d1 << 8) | (d2 << 16) | (d3 << 24)
     dut._log.info("DI0 = {} {} {} {} {:08x} do_insert_IDLE={}".format(d0, d1, d2, d3, d, do_insert_IDLE))
     # if reg change this will break but its a known value we can validate endian against
+    # MaxPacketLength=60 AddressWidth == 7
+    assert d == 0x303b3007, f"REG_INFO = 0x{d:08x} != 0x303b3007 do_insert_IDLE={do_insert_IDLE}"
     # MaxPacketLength=52 AddressWidth == 7
     #assert d == 0x30333007, f"REG_INFO = 0x{d:08x} != 0x30333007 do_insert_IDLE={do_insert_IDLE}"
     # MaxPacketLength=40 AddressWidth == 7
@@ -556,6 +558,8 @@ async def test_tt2wb_raw(dut):
     d = (d0) | (d1 << 8) | (d2 << 16) | (d3 << 24)
     dut._log.info("DI3 = {} {} {} {} {:08x} do_insert_IDLE={}".format(d0, d1, d2, d3, d, do_insert_IDLE))
     # if reg change this will break but its a known value we can validate endian against
+    # MaxPacketLength=60 AddressWidth == 7
+    assert d == 0x303b3007, f"REG_INFO = 0x{d:08x} != 0x303b3007 do_insert_IDLE={do_insert_IDLE}"
     # MaxPacketLength=52 AddressWidth == 7
     #assert d == 0x30333007, f"REG_INFO = 0x{d:08x} != 0x30333007 do_insert_IDLE={do_insert_IDLE}"
     # MaxPacketLength=40 AddressWidth == 7
