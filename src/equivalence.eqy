@@ -1,0 +1,73 @@
+[options]
+splitnets on
+
+[gold]
+read_verilog -sv decoder.v tt_um_seven_segment_seconds.v
+
+[gate]
+exec -- python3 formal_pdk_proc.py primitives.v sky130_fd_sc_hd.v -o formal_pdk.v
+read -sv formal_pdk.v gate_level_netlist.v
+
+[script]
+hierarchy -check -top tt_um_seven_segment_seconds
+prep
+memory_map -formal
+
+async2sync
+
+[collect *]
+group *[] \1[]
+bind second_counter[]
+
+[strategy sat]
+use sat
+depth 5
+
+[strategy pdr]
+use sby
+engine abc pdr -rfi
+
+# Notes from Jannis @ YosysHQ
+#
+# The first thing I checked is equivalence/matched.ids which shows signals that
+# were found and matched in both designs. It only contained I/O ports, that's
+# not going to lead to good partitioning, so I looked into equivalence/gold.ids
+# and equivalence/gate_recoded.ids and noticed that the GL netlist has wide
+# signals split into individual signals with the bit index in the name, i.e.
+# signals like \second_counter[0] . For this eqy has the option `splitnets on`
+# that I added.
+#
+# This still produced an error where SBY fails to run. The SBY logfile whose
+# path is output as part of the EQY error points to the following issue: the
+# design contains memory cells (the rom for the decoder I think) and part of
+# the flow EQY uses to check partitions with SBY requires memories to be
+# mapped. I opened an issue that this should either be handled automatically or
+# produce a better error message. The solution for now is to add `memory_map
+# -formal` to the script.
+#
+# Next I got `Failed to prove equivalence` errors, so everything did run
+# without failing but found input values for the partition for which the
+# outputs do not match. This happens when the designs are not equivalent _or_
+# when the partitions are too small. I saw that it had different bits of the
+# same signal in different partitions, which I think might just be the default
+# behavior with splitnets. This is prone to lead to too small partitions.
+#
+# The first step I took to fix this is to use a `group` statement in the
+# `collect` section which groups signals matching a pattern into the same
+# partition. Here `group *[] \1[]` means group all signal of the form
+# `name[number]` that share a name.
+#
+# After that we are still left with a single failing partition, but we also
+# have a warning `Warning: Partition tt_um_seven_segment_seconds.uo_out.0
+# contains 34 unused gold inputs.` which is an indicator that during synthesis
+# some signals used by the gold side were optimized away on the gate side.
+#
+# My usual approach is to try using a `bind` statement on such signals. The
+# `bind` statement tells the partitioner to not create a partition with those
+# signals as input. To figure out which signal to bind, I looked into
+# equivalence/partitions/tt_um_seven_segment_seconds.uo_out.0.json which lists
+# "unused" signals under "gold_module". Those are signals used on the gold side
+# that are unused on the gate side. Among those `second_counter` looked like it
+# was important so I tried `bind second_counter[]` first.
+#
+# With that the equivalence check passes
