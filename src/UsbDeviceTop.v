@@ -2167,10 +2167,10 @@ module UsbDeviceCtrl (
   reg [87:0] main_stateNext_string;
   `endif
 
-  reg [7:0] memory_ram_symbol0 [0:23];
-  reg [7:0] memory_ram_symbol1 [0:23];
-  reg [7:0] memory_ram_symbol2 [0:23];
-  reg [7:0] memory_ram_symbol3 [0:23];
+  reg [7:0] memory_ram_symbol0 [0:25];
+  reg [7:0] memory_ram_symbol1 [0:25];
+  reg [7:0] memory_ram_symbol2 [0:25];
+  reg [7:0] memory_ram_symbol3 [0:25];
   reg [7:0] _zz_memory_ramsymbol_read;
   reg [7:0] _zz_memory_ramsymbol_read_1;
   reg [7:0] _zz_memory_ramsymbol_read_2;
@@ -2180,7 +2180,7 @@ module UsbDeviceCtrl (
       zz__zz_ctrl_rsp_payload_fragment_data_1[7 : 0] = 8'h07;
       zz__zz_ctrl_rsp_payload_fragment_data_1[11 : 8] = 4'b0000;
       zz__zz_ctrl_rsp_payload_fragment_data_1[15 : 12] = 4'b0011;
-      zz__zz_ctrl_rsp_payload_fragment_data_1[24 : 16] = 9'h033;
+      zz__zz_ctrl_rsp_payload_fragment_data_1[24 : 16] = 9'h03b;
       zz__zz_ctrl_rsp_payload_fragment_data_1[26 : 25] = 2'b00;
       zz__zz_ctrl_rsp_payload_fragment_data_1[31 : 27] = 5'h06;
     end
