@@ -77,4 +77,4 @@ set ::env(FP_CORE_UTIL) 65
 #set ::env(CTS_SINK_CLUSTERING_SIZE) 20
 
 # H / W
-set ::env(FP_ASPECT_RATIO) [expr 2/2]
+set ::env(FP_ASPECT_RATIO) [expr 3/2]
