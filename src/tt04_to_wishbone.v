@@ -78,10 +78,12 @@ module tt04_to_wishbone #(
     wire [2:0] cmd;
     assign cmd = uio_in[7:5];
     reg valid;
+    assign uio_out[3:0] = {4{1'b0}};		// Do we really need to do this? OL 2023.09.11 errors otherwise
     assign uio_out[4] = valid;
     assign uio_out[5] = 0; // N/C tie-down
     assign uio_out[6] = 0; // N/C tie-down
     assign uio_out[7] = 0; // N/C tie-down
+    assign uio_oe[3:0] = {4{UIO_OE_INPUT}};	// Do we really need to do this? OL 2023.09.11 errors otherwise
     assign uio_oe[4] = UIO_OE_OUTPUT;
     assign uio_oe[5] = UIO_OE_INPUT;
     assign uio_oe[6] = UIO_OE_INPUT;
