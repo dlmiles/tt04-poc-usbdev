@@ -883,6 +883,7 @@ async def test_usbdev(dut):
         await ttwb.exe_write(d, a)
 
     # This is probing the wishbone address space to find the end of the memory buffer
+    expect_wrap = ((ADDRESS_LENGTH+3) << 24) | ((ADDRESS_LENGTH+2) << 16) | ((ADDRESS_LENGTH+1) << 8) | (ADDRESS_LENGTH)
     end_of_buffer = -1
     for a in range(0, ADDRESS_LENGTH+4, 4):
         i = a & 0xff
@@ -890,7 +891,10 @@ async def test_usbdev(dut):
         d = await ttwb.exe_read_BinaryValue(a)
         if d[0].is_resolvable:
             # The probe strategy might see aliasing of memory locations (gatelevel/flattened HDL might see this)
-            if a >= ADDRESS_LENGTH and d[0] != expect:
+            if a == 0 and d[0] != expect and d[0] == expect_wrap:
+                # If ADDRESS_LENGTH is power-of-2 modulus == 0, the write at +4 would wrap
+                dut._log.warning("MEM-BUF-WRAP detected ? @0x{:04x} actual={:08x} expected={:08x} ADDRESS_LENGTH={}".format(a, d[0].integer, expect, ADDRESS_LENGTH))
+            elif a >= ADDRESS_LENGTH and ( d[0] != expect or d[0] == expect_wrap ):
                 dut._log.warning("MEM-BUF-ALIAS detected ? @0x{:04x} actual={:08x} expected={:08x}".format(a, d[0].integer, expect))
                 if end_of_buffer == -1:
                     end_of_buffer = a
