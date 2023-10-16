@@ -66,7 +66,7 @@ set ::env(RT_MAX_LAYER) {met4}
 # FP_CORE_UTIL=60 will adding +10% to default (70% max util)
 # This was necessary to increase for 2x2 squeeze
 #set ::env(FP_CORE_UTIL) 65
-set ::env(FP_CORE_UTIL) 71
+set ::env(FP_CORE_UTIL) 72
 
 # 10 is default
 #set ::env(SYNTH_MAX_FANOUT) 7
